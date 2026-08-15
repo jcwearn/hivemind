@@ -439,13 +439,25 @@ func TestFramesSurviveSSEEncoding(t *testing.T) {
 
 	frame := waitForFrame(t, frames, func(f string) bool { return strings.Contains(f, "roster") })
 
-	// The fragment must be complete: opening hud through closing roster.
-	if !strings.HasPrefix(frame, `<div class="hud">`) {
-		t.Errorf("frame does not start with the hud: %.80q", frame)
+	// The frame carries two sibling subtrees -- the board and the rail -- so
+	// both ends and both halves have to arrive. Asserting the first and last
+	// tags rather than a specific class keeps this about truncation, which is
+	// what the test is for, rather than about the current layout.
+	if !strings.HasPrefix(frame, "<div ") {
+		t.Errorf("frame does not start with an element: %.80q", frame)
 	}
-	if !strings.HasSuffix(strings.TrimSpace(frame), "</ul>") {
-		t.Errorf("frame is truncated, does not end with </ul>: %.80q", frame[max(0, len(frame)-80):])
+	if !strings.HasSuffix(strings.TrimSpace(frame), "</aside>") {
+		t.Errorf("frame is truncated, does not end with </aside>: %.80q", frame[max(0, len(frame)-80):])
 	}
+
+	// One marker from each subtree. A frame cut at its first newline would keep
+	// the board and lose the rail entirely.
+	for _, want := range []string{`class="board"`, `class="tally"`, `class="roster"`} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("frame is missing %s -- it did not survive intact", want)
+		}
+	}
+
 	if strings.Contains(frame, "data: ") {
 		t.Error("frame contains an un-decoded SSE prefix")
 	}

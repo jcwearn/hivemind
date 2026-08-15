@@ -217,12 +217,27 @@ a {
 
 /* ---------- big screen ---------- */
 
+/* Three columns: the static join panel, the board, and the live rail.
+ *
+ * Height is capped at the viewport on purpose. The board is the only thing
+ * allowed to grow, and everything else has to stay on screen -- an earlier
+ * version let the board take all the vertical space it wanted and pushed the
+ * vote tally below the fold, which hid the single most important thing on the
+ * display. */
 .screen {
-  min-height: 100%;
+  height: 100vh;
   display: grid;
-  grid-template-columns: minmax(180px, 20%) 1fr;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(220px, 300px);
   gap: 1.5rem;
   padding: 1.5rem;
+  align-items: start;
+}
+
+/* The swap target itself lays nothing out. Its children -- the board and the
+ * rail -- are placed by .screen's grid above, which is what lets a single
+ * rendered frame per tick still occupy two separate columns. */
+#screen-live {
+  display: contents;
 }
 
 .join-panel {
@@ -258,21 +273,16 @@ a {
   border-radius: 2px;
 }
 
-.stage {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
 .hud {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
   letter-spacing: 0.18em;
   color: var(--dim);
   font-size: 0.95rem;
+  min-width: 0;
 }
 
 .hud b {
@@ -313,34 +323,55 @@ a {
 
 .board-wrap {
   position: relative;
-  flex: 1;
-  min-height: 0;
+  height: calc(100vh - 3rem);
   display: flex;
   align-items: center;
   justify-content: center;
+  min-width: 0;
 }
 
+/* --cols and --rows come from a <style> the server renders once per page, so
+ * the board's shape follows game.Config instead of a number copied in here.
+ * Sizing by height and letting width follow is what keeps the whole board on a
+ * television without scrolling. */
 .board {
-  width: 100%;
-  max-width: min(100%, 120vh);
+  --cols: 24;
+  --rows: 18;
+  aspect-ratio: var(--cols) / var(--rows);
+  /* Capped by BOTH the column width and by what the viewport height allows.
+   * Setting height: 100% instead would win over aspect-ratio and stretch the
+   * grid out of square -- the cells stop being cells and the snake reads as a
+   * smear. Because --cols and --rows are plain numbers, the height bound is
+   * something calc() can actually express. */
+  width: min(100%, calc((100vh - 3rem) * var(--cols) / var(--rows)));
+  height: auto;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
-  background: #05070a;
+  gap: 1px;
+  background: var(--line);
   border: 1px solid var(--line);
   border-radius: 3px;
   overflow: hidden;
 }
 
+/* Rows and cells just divide the board evenly. The board's own aspect-ratio
+ * makes the cells square, so nothing here needs to know the grid size. */
 .row {
   display: flex;
+  flex: 1;
+  gap: 1px;
+  min-height: 0;
 }
 
+/* An empty cell has to be visibly a cell. The 1px gaps above show the board's
+ * background through as grid lines, which reads across a room in a way the
+ * previous inset hairline did not -- at TV distance that version was an
+ * unbroken black rectangle. */
 .cell {
-  flex: 1 1 0;
-  aspect-ratio: 1 / 1;
-  /* A hairline grid, drawn with insets rather than borders so it cannot change
-   * the cell's size and knock the whole board out of square. */
-  box-shadow: inset 0 0 0 0.5px rgba(28, 36, 46, 0.55);
+  flex: 1;
+  min-width: 0;
+  background: #0d131a;
 }
 
 .cell.body {
@@ -391,17 +422,34 @@ a {
   color: var(--warn);
 }
 
+/* The live column: score, votes, who is here. Scrolls on its own if a room
+ * gets big enough to need it, rather than pushing the board around. */
+.rail {
+  height: calc(100vh - 3rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+  overflow-y: auto;
+}
+
 /* ---------- vote tally ---------- */
 
 .tally {
   display: grid;
   gap: 0.3rem;
-  margin-top: 0.9rem;
+  min-width: 0;
 }
 
+/* minmax(0, 1fr) rather than 1fr, and min-width: 0 on .bar below.
+ *
+ * A grid track written as 1fr is really minmax(auto, 1fr), and that auto floor
+ * is the pips' min-content width -- so the bar refused to shrink, the row grew
+ * past its container, and the whole controller overflowed sideways on a phone:
+ * clipped room code, clipped button, clipped right D-pad key. */
 .tally-row {
   display: grid;
-  grid-template-columns: 1.6rem 1fr 2.2rem;
+  grid-template-columns: 1.6rem minmax(0, 1fr) 2.2rem;
   align-items: center;
   gap: 0.6rem;
 }
@@ -414,10 +462,12 @@ a {
 .bar {
   display: flex;
   gap: 3px;
+  min-width: 0;
 }
 
 .pip {
   flex: 1 1 0;
+  min-width: 0;
   max-width: 2rem;
   height: 0.7rem;
   background: var(--line);
@@ -438,11 +488,12 @@ a {
 
 .roster {
   list-style: none;
-  margin: 1rem 0 0;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem 1rem;
+  min-width: 0;
 }
 
 .roster li,
@@ -484,6 +535,7 @@ a {
   flex-direction: column;
   padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom));
   gap: 0.75rem;
+  min-width: 0;
 }
 
 .play-head {
@@ -497,6 +549,7 @@ a {
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 0.9rem;
+  min-width: 0;
 }
 
 .play-status .headline.sm {
@@ -511,10 +564,11 @@ a {
   flex: 1;
   min-height: 220px;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
   gap: 0.5rem;
   margin-top: 0.5rem;
+  min-width: 0;
 }
 
 .pad-up { grid-area: 1 / 2; }
@@ -555,10 +609,24 @@ a {
 
 /* ---------- narrow screens ---------- */
 
-@media (max-width: 720px) {
+/* Below this the three columns stop earning their keep: the board gets too
+ * narrow to read and the rail too cramped to scan. */
+@media (max-width: 1100px) {
   .screen {
-    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100vh;
+    grid-template-columns: minmax(0, 1fr);
     padding: 1rem;
+  }
+
+  .board-wrap,
+  .rail {
+    height: auto;
+  }
+
+  .board {
+    width: 100%;
+    height: auto;
   }
 
   .join-panel {
@@ -570,6 +638,10 @@ a {
 
   .qr {
     max-width: 120px;
+    margin: 0;
+  }
+
+  .room-code {
     margin: 0;
   }
 }

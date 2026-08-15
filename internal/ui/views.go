@@ -11,6 +11,23 @@ import (
 // print is a small count -- score, lives, votes -- so there is nothing to format.
 func itoa(n int) string { return strconv.Itoa(n) }
 
+// boardVars carries the grid's dimensions into CSS as custom properties, so the
+// stylesheet can hold the board to the right shape without hardcoding a number
+// that lives in game.Config.
+//
+// It is a <style> element rather than a style attribute for two reasons. The
+// attribute form is what templ sanitises, and would need SafeCSS to survive;
+// and more importantly the board is inside the SSE-swapped region, so an
+// attribute on it would be re-sent on every frame to say something that never
+// changes. This renders once, on the page, outside the swap.
+//
+// Both values are ints straight from the config, so there is nothing here a
+// caller could inject -- which is the only reason templ.Raw is acceptable.
+func boardVars(cfg game.Config) string {
+	return "<style>.board{--cols:" + strconv.Itoa(cfg.Width) +
+		";--rows:" + strconv.Itoa(cfg.Height) + "}</style>"
+}
+
 func isCountdown(s lobby.Snapshot) bool { return s.State.Phase == game.PhaseCountdown }
 
 // maxPips caps how many blocks a vote tally draws. Past a dozen the bar stops
