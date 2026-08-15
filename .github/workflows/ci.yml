@@ -1,0 +1,31 @@
+name: CI
+
+# From templates/ci-go.yaml in jcwearn/workflows.
+#
+# The contract go-ci.yaml relies on, and where this repo satisfies it:
+#
+#   go.mod                  the toolchain pin setup-go reads
+#   .golangci-lint-version  2.12.2
+#   .golangci.yml           v2 config, linters and formatters both
+#   `go test ./...`         internal/{game,lobby,ui,web}
+#
+# The templ codegen drift check is deliberately NOT here. templ is this repo's
+# choice rather than every Go repo's, so it lives in its own workflow and runs
+# in parallel with this one. See codegen.yml.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  ci:
+    # Explicit even though `read` is all go-ci needs and all this account grants
+    # by default. A reusable workflow can only narrow what the caller granted,
+    # so the grant belongs here where it is visible.
+    permissions:
+      contents: read
+    # Renovate pins this to a digest on its next run, leaving `# v1` behind as
+    # the record of what to follow.
+    uses: jcwearn/workflows/.github/workflows/go-ci.yaml@v1

@@ -1,0 +1,52 @@
+name: Codegen
+
+# The bespoke half of this repo's CI, kept out of the shared go-ci.yaml on
+# purpose -- and running in parallel with it rather than extending it.
+#
+# The *_templ.go files are committed, which is what lets the Dockerfile skip a
+# codegen stage and lets `go build` work on a checkout with no templ installed.
+# The cost of committing generated code is that it can go stale, and this is the
+# check that makes that impossible to merge.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codegen-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  templ:
+    name: templ output is current
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      # `go tool` runs the version pinned by the tool directive in go.mod, so
+      # this cannot drift from what a developer runs via `make generate`.
+      - name: Regenerate
+        run: |
+          set -euo pipefail
+          go tool templ generate
+
+      - name: Committed output matches
+        run: |
+          set -euo pipefail
+          if ! git diff --exit-code -- '*_templ.go'; then
+            echo "::error::templ output is stale. Run 'make generate' and commit the result."
+            exit 1
+          fi
