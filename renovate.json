@@ -1,14 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["local>jcwearn/renovate-config"],
-  "postUpdateOptions": ["gomodTidy"],
-  "packageRules": [
-    {
-      "description": "Dependency bumps are patch releases unless somebody says otherwise.",
-      "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
-      "addLabels": ["release:patch"]
-    }
-  ],
+  "addLabels": ["release:patch"],
   "customManagers": [
     {
       "description": "golangci-lint is pinned in a bare version file, which no standard manager knows how to read. Without this the pin silently rots at whatever it was set to. See the go-ci.yaml section of the jcwearn/workflows README.",
