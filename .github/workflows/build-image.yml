@@ -1,0 +1,20 @@
+name: Build Image
+
+# From templates/ci-docker.yaml in jcwearn/workflows.
+#
+# Builds on a pull request WITHOUT pushing, so a Dockerfile or dependency change
+# that breaks the image is caught before merge rather than during a release.
+# Pushing is release.yml's job, and it calls the same shared workflow with an
+# `image` set.
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    # `packages: write` is deliberately NOT granted: with no `image` input the
+    # shared workflow skips the registry login entirely and pushes nothing.
+    permissions:
+      contents: read
+    uses: jcwearn/workflows/.github/workflows/docker-build.yaml@v1

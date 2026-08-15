@@ -1,0 +1,21 @@
+name: Release
+
+# Label-driven semver. The merged pull request's release:* label decides the
+# bump; release.yaml builds and pushes the image, then tags and cuts the
+# GitHub Release -- in that order, so nothing is ever tagged without an image
+# behind it.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    permissions:
+      contents: write # git tag + GitHub Release
+      packages: write # push to GHCR
+    uses: jcwearn/workflows/.github/workflows/release.yaml@v1
+    with:
+      image: ghcr.io/jcwearn/hivemind
