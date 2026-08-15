@@ -1,0 +1,16 @@
+name: Require release label
+
+# Every pull request carries exactly one of release:major, release:minor,
+# release:patch or release:skip. release.yml reads it after the merge, so a
+# missing label would mean a merged change that never ships.
+
+on:
+  pull_request:
+    types: [opened, reopened, edited, labeled, unlabeled, synchronize]
+
+jobs:
+  require-release-label:
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: jcwearn/workflows/.github/workflows/require-release-label.yaml@v1
