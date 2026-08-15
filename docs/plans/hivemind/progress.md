@@ -32,6 +32,15 @@ hijacked connection, so net/http waits for each handler to return on its own —
 and a healthy stream never does. Reversing the order costs the full 10s timeout
 on every connected phone.
 
+**Not yet verified: how it actually looks.** Every check so far has been against
+the rendered HTML, not a rendered page. The Chrome extension was not connected,
+and headless Chrome hangs on this app specifically — the SSE stream never
+closes, so `--virtual-time-budget` never reaches network idle. As a substitute,
+every CSS class the templates emit was cross-checked against `styles.css`; the
+only unmatched one is `.score`, which is a semantic hook inside `.hud` and
+inherits correctly. **Someone should still run `make party` and look at it on a
+real television and a real phone before Phase 4 is called done.**
+
 **Decisions made along the way:**
 
 - Votes *persist* until changed rather than clearing each tick. At up to eight
