@@ -1,0 +1,13 @@
+# Deny everything, then allow what the build actually reads. The alternative --
+# listing what to exclude -- silently starts shipping whatever gets added later.
+*
+
+!cmd/
+!internal/
+!static/
+!go.mod
+!go.sum
+
+# Tests are not built into the image, and excluding them keeps an edit to a test
+# from invalidating the build cache.
+**/*_test.go
