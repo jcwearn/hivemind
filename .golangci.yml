@@ -1,0 +1,68 @@
+version: "2"
+
+# The shared go-ci.yaml runs `golangci-lint run` and nothing else, so this file
+# is the entire definition of what "lint" means here -- formatters included. In
+# v2 anything under `formatters:` is reported by the same run as an ordinary
+# issue tagged with the formatter that raised it, which is why there is no
+# separate format step in CI.
+
+linters:
+  default: standard
+  enable:
+    # A leaked response body in the SSE tests would look like a flake rather
+    # than a leak, which is the worst way to find one.
+    - bodyclose
+    - errorlint
+    - gocritic
+    - misspell
+    # Returning a nil error after checking a non-nil one is the single most
+    # common way the room actor's error paths could silently stop reporting.
+    - nilerr
+    - revive
+    - unconvert
+    # Catches context.Background() and manual cleanup in tests where t.Context()
+    # and t.Cleanup exist.
+    - usetesting
+
+  settings:
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        # Fires on the small value-type structs this codebase passes around on
+        # purpose -- game.State is copied every tick by design, and the whole
+        # rule set depends on it staying a value.
+        - hugeParam
+
+    revive:
+      rules:
+        - name: exported
+        - name: indent-error-flow
+        - name: unexported-return
+        - name: errorf
+        - name: context-as-argument
+        - name: unreachable-code
+
+  exclusions:
+    rules:
+      # templ writes these, they are not ours to lint, and they are regenerated
+      # from the .templ source on every build.
+      - path: _templ\.go
+        linters:
+          - errcheck
+          - gocritic
+          - revive
+          - unconvert
+          - staticcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+  exclusions:
+    generated: lax
+    paths:
+      - _templ\.go
