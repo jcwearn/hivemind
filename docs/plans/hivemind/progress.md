@@ -4,7 +4,7 @@
 
 | Phase | Status | Updated | Notes |
 |-------|--------|---------|-------|
-| 0. `go-ci.yaml` in jcwearn/workflows | Awaiting merge | 2026-08-15 | PR jcwearn/workflows#18, `release:minor`. All checks green. Must merge AND tag before this repo's `ci.yml` can resolve `@v1` |
+| 0. `go-ci.yaml` in jcwearn/workflows | Complete | 2026-08-15 | workflows#18 merged, released as v1.6.0, `v1` moved. This repo is its first consumer and CI is green |
 | 1. Service skeleton | Complete | 2026-08-15 | main.go, web server, health, Docker (8.4MB distroless), Makefile, CI wiring |
 | 2. Lobby engine | Complete | 2026-08-15 | Room actor, registry, SSE fan-out, signed cookies, inline-SVG QR |
 | 3. The game | Complete | 2026-08-15 | Pure `internal/game`, tally, ramp, shared lives, phase machine |
@@ -14,11 +14,11 @@
 
 ## Handoff Notes
 
-**Phase 0 is the blocker.** `ci.yml`, `build-image.yml`, `release.yml` and
-`require-release-label.yml` all reference `jcwearn/workflows/...@v1`. The `v1`
-tag currently points at v1.5.1, which predates `go-ci.yaml`, so CI on this repo
-will fail with "workflow not found" until workflows#18 is merged and the release
-job moves the tag. Nothing else is waiting on anything.
+**Phase 0 is done.** workflows#18 merged as v1.6.0 and the `v1` tag moved, so
+all four checks here are green. The shared `go-ci.yaml` was confirmed working on
+its first real consumer: the run log shows it reading `.golangci-lint-version`
+("Finding needed golangci-lint version... Installing golangci-lint binary
+v2.12.2"), which is the mechanism the whole contract rests on.
 
 **Verified working end to end**, both via `go run` and from the built image:
 create room → join from two clients → both vote → the tally updates on the
