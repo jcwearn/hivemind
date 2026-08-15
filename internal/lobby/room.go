@@ -336,10 +336,17 @@ func (c joinCmd) apply(r *Room) {
 	// signed cookie rather than a per-connection value: locking a screen mid
 	// round should not cost somebody their place.
 	if p, ok := r.players[c.id]; ok {
-		if c.name != "" && c.name != p.Name {
+		renamed := c.name != "" && c.name != p.Name
+		if renamed {
 			p.Name = c.name
 		}
 		c.reply <- *p
+		// Only when something actually changed. Rejoining is common -- every
+		// reload of the controller does it -- and a broadcast per reload would
+		// be a frame nobody needs.
+		if renamed {
+			r.broadcast()
+		}
 		return
 	}
 
@@ -359,6 +366,50 @@ func (r *Room) Join(id PlayerID, name string) (Player, error) {
 		return Player{}, err
 	}
 	return <-reply, nil
+}
+
+// renameResult carries whether the player was in the room at all, which is how
+// a stale cookie from a collected room surfaces to the caller.
+type renameResult struct {
+	player Player
+	member bool
+}
+
+type renameCmd struct {
+	id    PlayerID
+	name  string
+	reply chan renameResult
+}
+
+func (c renameCmd) apply(r *Room) {
+	p, ok := r.players[c.id]
+	if !ok {
+		c.reply <- renameResult{}
+		return
+	}
+
+	r.lastSeen = time.Now()
+	if c.name != "" && c.name != p.Name {
+		p.Name = c.name
+		r.log.Info("player renamed", "player", c.id, "name", c.name)
+		// Broadcast, because the roster on the shared screen is the only place
+		// this is visible to anybody but the person who typed it. joinCmd's
+		// rename path deliberately does the same.
+		r.broadcast()
+	}
+	c.reply <- renameResult{player: *p, member: true}
+}
+
+// Rename changes a player's display name. It reports false if this phone is not
+// in the room, and never creates a seat -- that is Join's job, and conflating
+// the two would let a stale cookie silently reappear in the roster.
+func (r *Room) Rename(id PlayerID, name string) (Player, bool, error) {
+	reply := make(chan renameResult, 1)
+	if err := r.send(renameCmd{id: id, name: name, reply: reply}); err != nil {
+		return Player{}, false, err
+	}
+	res := <-reply
+	return res.player, res.member, nil
 }
 
 type leaveCmd struct{ id PlayerID }

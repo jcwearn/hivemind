@@ -168,6 +168,53 @@ func (s *Server) handleVote(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleRename changes the caller's display name.
+//
+// It returns the input carrying the name the server actually settled on, which
+// is the point: the client swaps this in over what was typed, so a name that
+// trims to nothing or runs past the limit visibly corrects itself rather than
+// leaving the phone and the television disagreeing.
+func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
+	room, ok := s.rooms.Get(r.PathValue("code"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	id := s.cookies.playerID(w, r)
+
+	name := sanitizeName(r.FormValue("name"))
+	if name == "" {
+		// Nothing usable was submitted. Answer with the name they already have
+		// so the field snaps back instead of going blank.
+		snap, err := room.Snapshot()
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		if me, found := findPlayer(snap, id); found {
+			s.fragment(w, r, ui.NameInput(room.Code, me.Name))
+			return
+		}
+		w.Header().Set("HX-Redirect", "/j/"+room.Code)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	me, member, err := room.Rename(id, name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if !member {
+		w.Header().Set("HX-Redirect", "/j/"+room.Code)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	s.fragment(w, r, ui.NameInput(room.Code, me.Name))
+}
+
 func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	room, ok := s.rooms.Get(r.PathValue("code"))
 	if !ok {
@@ -200,6 +247,15 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"status": "ok",
 		"rooms":  s.rooms.Count(),
 	})
+}
+
+// fragment renders a component as an htmx swap response. Unlike page it writes
+// no status of its own, so the 200 default applies.
+func (s *Server) fragment(w http.ResponseWriter, r *http.Request, c templ.Component) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := c.Render(r.Context(), w); err != nil {
+		s.log.Error("render fragment", "error", err, "path", r.URL.Path)
+	}
 }
 
 // page renders a full document.
