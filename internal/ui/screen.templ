@@ -1,0 +1,115 @@
+package ui
+
+import "github.com/jcwearn/hivemind/internal/lobby"
+
+// ScreenPage is the shared display: the thing plugged into the television.
+//
+// The join panel -- code and QR -- lives OUTSIDE the SSE-swapped region on
+// purpose. The QR is a five kilobyte path that never changes for the life of the
+// room, and re-sending it eight times a second to every connected screen would
+// be most of the bandwidth this program uses, spent on pixels that are already
+// correct.
+templ ScreenPage(s lobby.Snapshot, joinURL string, code QR) {
+	@Layout("hivemind " + s.Code) {
+		<main class="screen">
+			<aside class="join-panel">
+				<p class="join-hint">join at</p>
+				<p class="join-url">{ joinURL }</p>
+				<svg
+					class="qr"
+					viewBox={ "0 0 " + itoa(code.Extent) + " " + itoa(code.Extent) }
+					shape-rendering="crispEdges"
+					role="img"
+					aria-label={ "Join code " + s.Code }
+				>
+					<rect width={ itoa(code.Extent) } height={ itoa(code.Extent) } fill="#fff"></rect>
+					<path d={ code.Path } fill="#000"></path>
+				</svg>
+				<p class="room-code">{ s.Code }</p>
+			</aside>
+			<div class="stage" hx-ext="sse" sse-connect={ "/r/" + s.Code + "/screen/events" }>
+				<div id="screen-live" sse-swap="frame">
+					@ScreenFrame(s)
+				</div>
+			</div>
+		</main>
+	}
+}
+
+// ScreenFrame is the part that changes: everything downstream of a tick.
+//
+// It is rendered once per tick and the same bytes go to every connected screen.
+templ ScreenFrame(s lobby.Snapshot) {
+	<div class="hud">
+		<span class="score">SCORE <b>{ itoa(s.State.Score) }</b></span>
+		<span class="lives" aria-label={ itoa(s.State.Lives) + " lives remaining" }>
+			{{ left, spent := lives(s) }}
+			for range left {
+				<i class="heart on"></i>
+			}
+			for range spent {
+				<i class="heart off"></i>
+			}
+		</span>
+	</div>
+	<div class="board-wrap">
+		<div class="board" aria-hidden="true">
+			for _, row := range rows(s.State) {
+				<div class="row">
+					for _, c := range row {
+						<i class={ cellClass(c) }></i>
+					}
+				</div>
+			}
+		</div>
+		if phaseHeadline(s) != "" {
+			<div class="overlay">
+				<p class="headline">{ phaseHeadline(s) }</p>
+				if isCountdown(s) && s.State.Countdown > 0 {
+					<p class="countdown">{ itoa(s.State.Countdown) }</p>
+				}
+				if canStart(s) {
+					<button
+						class="btn primary"
+						hx-post={ "/r/" + s.Code + "/start" }
+						hx-swap="none"
+					>{ startLabel(s) }</button>
+				}
+			</div>
+		}
+	</div>
+	@tally(s)
+	<ul class="roster">
+		for _, p := range s.Players {
+			<li class={ seatClass(p.Seat) }>
+				<span class="dot"></span>{ p.Name }
+			</li>
+		}
+		if len(s.Players) == 0 {
+			<li class="empty">nobody here yet</li>
+		}
+	</ul>
+}
+
+// tally is the live vote bar. It is the single most important thing on the
+// screen: it is what makes a room of people realise they are arguing with each
+// other rather than playing against the game.
+templ tally(s lobby.Snapshot) {
+	<div class="tally" role="group" aria-label="Votes">
+		for _, d := range directions {
+			<div class="tally-row">
+				<span class="glyph">{ dirGlyph(d) }</span>
+				<span class="bar">
+					{{ on, off := pips(s.Tally[d]) }}
+					for range on {
+						<i class="pip on"></i>
+					}
+					for range off {
+						<i class="pip"></i>
+					}
+				</span>
+				<span class="count">{ itoa(s.Tally[d]) }</span>
+			</div>
+		}
+	</div>
+}

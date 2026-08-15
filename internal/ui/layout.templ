@@ -1,0 +1,29 @@
+package ui
+
+// Layout is the shell every page shares.
+//
+// htmx and its SSE extension are served from this binary rather than a CDN.
+// That keeps the "one binary, no network dependencies" property that makes this
+// thing trivial to run anywhere, and it means a party in a room with bad wifi is
+// not one CDN timeout away from an unusable controller. `defer` on both scripts
+// preserves their order, which matters: the extension registers itself against
+// an htmx that has to already exist.
+templ Layout(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+			<meta name="color-scheme" content="dark"/>
+			<title>{ title }</title>
+			<link rel="stylesheet" href="/static/styles.css"/>
+			<link rel="icon" href="/static/icon.svg" type="image/svg+xml"/>
+			<script src="/static/vendor/htmx-2.0.10.min.js" defer></script>
+			<script src="/static/vendor/htmx-ext-sse-2.2.4.js" defer></script>
+			<script src="/static/app.js" defer></script>
+		</head>
+		<body>
+			{ children... }
+		</body>
+	</html>
+}
