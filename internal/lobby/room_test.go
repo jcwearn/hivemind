@@ -344,3 +344,112 @@ func TestCallsIntoAClosedRoomFail(t *testing.T) {
 type countStreamsCmd struct{ reply chan int }
 
 func (c countStreamsCmd) apply(r *Room) { c.reply <- r.subscriberCount() }
+
+func TestRenameChangesTheNameAndBroadcasts(t *testing.T) {
+	r := idleRoom(t)
+	joinCmd{id: "ana", name: "ana", reply: make(chan Player, 1)}.apply(r)
+
+	// A subscriber is the only way to observe that the roster was re-sent, and
+	// the roster is the only place a rename is visible to anybody else.
+	sub := &subscriber{ch: make(chan []byte, 4)}
+	subscribeCmd{kind: ScreenStream, sub: sub, reply: make(chan []byte, 1)}.apply(r)
+	drain(sub.ch)
+
+	reply := make(chan renameResult, 1)
+	renameCmd{id: "ana", name: "anastasia", reply: reply}.apply(r)
+
+	res := <-reply
+	if !res.member {
+		t.Fatal("Rename reported the player was not a member")
+	}
+	if res.player.Name != "anastasia" {
+		t.Errorf("Name = %q, want %q", res.player.Name, "anastasia")
+	}
+	if got := r.players["ana"].Name; got != "anastasia" {
+		t.Errorf("stored name = %q, want %q", got, "anastasia")
+	}
+	if len(sub.ch) == 0 {
+		t.Error("a rename did not broadcast -- the shared screen would keep the old name")
+	}
+}
+
+func TestRenameKeepsTheSeat(t *testing.T) {
+	r := idleRoom(t)
+	first := make(chan Player, 1)
+	joinCmd{id: "ana", name: "ana", reply: first}.apply(r)
+	joinCmd{id: "sam", name: "sam", reply: make(chan Player, 1)}.apply(r)
+	was := <-first
+
+	reply := make(chan renameResult, 1)
+	renameCmd{id: "ana", name: "anastasia", reply: reply}.apply(r)
+
+	if got := (<-reply).player.Seat; got != was.Seat {
+		t.Errorf("seat changed on rename: %d, want %d", got, was.Seat)
+	}
+	if len(r.players) != 2 {
+		t.Errorf("players = %d, want 2 -- rename must not add a seat", len(r.players))
+	}
+}
+
+// A rename must never create a player. Conflating it with Join would let a
+// stale cookie from a collected room quietly reappear in the roster.
+func TestRenameDoesNotCreateAPlayer(t *testing.T) {
+	r := idleRoom(t)
+
+	reply := make(chan renameResult, 1)
+	renameCmd{id: "stranger", name: "nobody", reply: reply}.apply(r)
+
+	if (<-reply).member {
+		t.Error("Rename reported membership for a player that was never in the room")
+	}
+	if len(r.players) != 0 {
+		t.Errorf("players = %d, want 0 -- rename created a seat", len(r.players))
+	}
+}
+
+func TestRenameToTheSameNameDoesNotBroadcast(t *testing.T) {
+	r := idleRoom(t)
+	joinCmd{id: "ana", name: "ana", reply: make(chan Player, 1)}.apply(r)
+
+	sub := &subscriber{ch: make(chan []byte, 4)}
+	subscribeCmd{kind: ScreenStream, sub: sub, reply: make(chan []byte, 1)}.apply(r)
+	drain(sub.ch)
+
+	renameCmd{id: "ana", name: "ana", reply: make(chan renameResult, 1)}.apply(r)
+
+	if len(sub.ch) != 0 {
+		t.Error("a no-op rename broadcast a frame nobody needed")
+	}
+}
+
+// Rejoining is what every reload of the controller does, so it must not cost a
+// frame unless something actually changed.
+func TestRejoinBroadcastsOnlyWhenTheNameChanges(t *testing.T) {
+	r := idleRoom(t)
+	joinCmd{id: "ana", name: "ana", reply: make(chan Player, 1)}.apply(r)
+
+	sub := &subscriber{ch: make(chan []byte, 4)}
+	subscribeCmd{kind: ScreenStream, sub: sub, reply: make(chan []byte, 1)}.apply(r)
+	drain(sub.ch)
+
+	joinCmd{id: "ana", name: "ana", reply: make(chan Player, 1)}.apply(r)
+	if len(sub.ch) != 0 {
+		t.Error("an unchanged rejoin broadcast a frame")
+	}
+
+	joinCmd{id: "ana", name: "anastasia", reply: make(chan Player, 1)}.apply(r)
+	if len(sub.ch) == 0 {
+		t.Error("a rejoin under a new name did not broadcast")
+	}
+}
+
+// drain empties a subscriber's buffer so a test can assert on what arrives next.
+func drain(ch chan []byte) {
+	for {
+		select {
+		case <-ch:
+		default:
+			return
+		}
+	}
+}

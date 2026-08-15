@@ -14,7 +14,7 @@ templ PlayPage(s lobby.Snapshot, me lobby.Player) {
 	@Layout("hivemind " + s.Code) {
 		<main class="play" data-room={ s.Code }>
 			<header class="play-head">
-				<span class={ seatClass(me.Seat) }><span class="dot"></span>{ me.Name }</span>
+				@NameField(s.Code, me)
 				<span class="room-code sm">{ s.Code }</span>
 			</header>
 			<div hx-ext="sse" sse-connect={ "/r/" + s.Code + "/play/events" }>
@@ -31,6 +31,48 @@ templ PlayPage(s lobby.Snapshot, me lobby.Player) {
 			<p class="play-hint">hold a direction. the room decides.</p>
 		</main>
 	}
+}
+
+// NameField lets a player rename themselves from the controller.
+//
+// It is an input rather than a button that reveals a form, because the name is
+// already the thing being displayed -- making it directly editable is fewer
+// taps and one less state to design.
+//
+// The trigger is `change`, which fires on blur or on Enter, so it posts once
+// when somebody has finished rather than on every keystroke. It replaces
+// itself with the server's canonical answer, which matters when the server
+// disagrees: a name that trims to nothing snaps back to what it was, and a
+// name over the limit comes back clipped, instead of the phone showing one
+// thing while the television shows another.
+//
+// It sits OUTSIDE the SSE-swapped region, so a frame arriving mid-edit cannot
+// overwrite what somebody is typing.
+templ NameField(code string, me lobby.Player) {
+	<span class={ seatClass(me.Seat) }>
+		<span class="dot"></span>
+		@NameInput(code, me.Name)
+	</span>
+}
+
+// NameInput is the input on its own, because that is what the rename endpoint
+// returns: hx-swap="outerHTML" against hx-target="this" replaces exactly this
+// element, so the response must not carry the wrapper with it.
+templ NameInput(code, name string) {
+	<input
+		class="name-edit"
+		name="name"
+		value={ name }
+		maxlength="12"
+		autocomplete="off"
+		autocorrect="off"
+		spellcheck="false"
+		aria-label="Your name"
+		hx-post={ "/r/" + code + "/name" }
+		hx-trigger="change"
+		hx-target="this"
+		hx-swap="outerHTML"
+	/>
 }
 
 // voteButton posts a vote and swaps nothing.
