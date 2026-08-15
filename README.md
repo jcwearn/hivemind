@@ -10,19 +10,14 @@ wherever the room can agree to send it, which is rarely where anyone intended.
 Go, htmx, and server-sent events. No JavaScript framework, no database, and one
 static binary.
 
-```
-BIG SCREEN                      PHONE
-┌──────────────────────────┐   ┌──────────────┐
-│  ROOM QRTZ   SCORE 14    │   │   ▲  UP      │
-│  ┌────────────────────┐  │   │ ████░░ 3     │
-│  │ · · · · · · · · ·  │  │   │              │
-│  │ · ██████ · · ● ·   │  │   │ ◀ LEFT RIGHT▶│
-│  │ · · · ██ · · · ·   │  │   │ █░░░ 1  ██░░2│
-│  │ · · · ▓▓ · · · ·   │  │   │              │
-│  └────────────────────┘  │   │   ▼  DOWN    │
-│  ▲3  ◀1  ▶2  ▼0          │   │ ░░░░░░ 0     │
-└──────────────────────────┘   └──────────────┘
-```
+![A real game in progress: five players, the snake turning as the vote flips from right to up](docs/media/hivemind.gif)
+
+<sub>A real recorded round. Watch the tally on the right — the snake turns when
+the room does.</sub>
+
+| The television | Your phone |
+|---|---|
+| <img src="docs/media/screen.png" alt="The shared screen: join QR and code on the left, the board in the middle, score and live vote tally on the right" width="100%"> | <img src="docs/media/controller.png" alt="The phone controller: room status and vote tally above four large direction buttons" width="260"> |
 
 ## Try it
 
