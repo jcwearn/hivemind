@@ -1,0 +1,91 @@
+package ui
+
+// Home is the landing page: host a game, or type a code somebody read out.
+templ Home(errMsg string) {
+	@Layout("hivemind") {
+		<main class="home">
+			<h1 class="wordmark">HIVEMIND</h1>
+			<p class="tagline">one snake.<br/>everybody steers.</p>
+			if errMsg != "" {
+				<p class="error" role="alert">{ errMsg }</p>
+			}
+			<form method="post" action="/rooms">
+				<button class="btn primary" type="submit">HOST A GAME</button>
+			</form>
+			<form method="post" action="/join" class="join-form">
+				<label for="code">joining from your phone?</label>
+				<div class="join-row">
+					<input
+						id="code"
+						name="code"
+						class="code-input"
+						maxlength="4"
+						size="4"
+						autocomplete="off"
+						autocapitalize="characters"
+						autocorrect="off"
+						spellcheck="false"
+						placeholder="CODE"
+						aria-label="Room code"
+						required
+					/>
+					<button class="btn" type="submit">JOIN</button>
+				</div>
+			</form>
+			<footer class="colophon">
+				<a href="https://github.com/jcwearn/hivemind">source</a>
+			</footer>
+		</main>
+	}
+}
+
+// JoinPage is what a phone sees after scanning the QR: pick a name, and go.
+templ JoinPage(code, errMsg string) {
+	@Layout("join " + code + " — hivemind") {
+		<main class="home">
+			<h1 class="wordmark small">HIVEMIND</h1>
+			<p class="room-code-lg">{ code }</p>
+			if errMsg != "" {
+				<p class="error" role="alert">{ errMsg }</p>
+			}
+			<form method="post" action={ "/j/" + code }>
+				<label for="name">what should we call you?</label>
+				<div class="join-row">
+					<input
+						id="name"
+						name="name"
+						class="name-input"
+						maxlength="12"
+						autocomplete="off"
+						autocorrect="off"
+						spellcheck="false"
+						placeholder="NAME"
+						aria-label="Your name"
+						required
+					/>
+					<button class="btn primary" type="submit">GO</button>
+				</div>
+			</form>
+		</main>
+	}
+}
+
+// NotFound covers a code that has expired or was mistyped. Rooms are collected
+// ten minutes after the last person leaves, so this is a normal thing to hit
+// rather than an error worth alarming anybody about.
+templ NotFound(code string) {
+	@Layout("no such room — hivemind") {
+		<main class="home">
+			<h1 class="wordmark small">HIVEMIND</h1>
+			<p class="error" role="alert">
+				if code != "" {
+					no room called { code }.
+				} else {
+					no such room.
+				}
+			</p>
+			<p class="tagline">it may have finished, or the code may be a typo.</p>
+			<a class="btn" href="/">BACK</a>
+		</main>
+	}
+}
