@@ -8,8 +8,8 @@
 | 1. Service skeleton | Complete | 2026-08-15 | main.go, web server, health, Docker (8.4MB distroless), Makefile, CI wiring |
 | 2. Lobby engine | Complete | 2026-08-15 | Room actor, registry, SSE fan-out, signed cookies, inline-SVG QR |
 | 3. The game | Complete | 2026-08-15 | Pure `internal/game`, tally, ramp, shared lives, phase machine |
-| 4. Polish | Not Started | — | Arcade styling exists; still wants a README GIF and a spectator/late-join pass |
-| 5. Deploy to k3s + Tunnel | Not Started | — | Separate PR to jcwearn/k3s-cluster |
+| 4. Polish | Complete | 2026-08-15 | Three real layout defects found and fixed by finally looking at it; README now carries a recorded GIF and two stills (hivemind#2) |
+| 5. Deploy to k3s | Awaiting merge | 2026-08-15 | k3s-cluster#723. NOT Cloudflare Tunnel -- the cluster uses Envoy Gateway + external-dns. Blocked on making the GHCR package public |
 | 6. Second game + `Game` interface | Not Started | — | Deliberately deferred until there are two implementations |
 
 ## Handoff Notes
@@ -32,14 +32,22 @@ hijacked connection, so net/http waits for each handler to return on its own —
 and a healthy stream never does. Reversing the order costs the full 10s timeout
 on every connected phone.
 
-**Not yet verified: how it actually looks.** Every check so far has been against
-the rendered HTML, not a rendered page. The Chrome extension was not connected,
-and headless Chrome hangs on this app specifically — the SSE stream never
-closes, so `--virtual-time-budget` never reaches network idle. As a substitute,
-every CSS class the templates emit was cross-checked against `styles.css`; the
-only unmatched one is `.score`, which is a semantic hook inside `.hud` and
-inherits correctly. **Someone should still run `make party` and look at it on a
-real television and a real phone before Phase 4 is called done.**
+**Now verified visually, and it mattered.** Freezing a rendered page (splicing a
+captured SSE frame in and neutralising `sse-connect`) makes the app
+screenshottable — headless Chrome otherwise hangs forever waiting on the stream
+for network-idle. Doing that found three real defects: an invisible board, the
+vote tally pushed below the fold, and a board that had stopped being square.
+All fixed in hivemind#2.
+
+Two traps worth knowing for next time. Headless Chrome clamps its viewport to a
+**500px minimum** and then crops the screenshot to whatever `--window-size`
+asked for, which fabricates a convincing horizontal-overflow bug on any phone
+render -- use an iframe of the target width instead. And `git fetch --tags` will
+not move a tag that already exists locally, which made a correctly-moved `v1`
+look unmoved; `--force` is required.
+
+**Still not done by a human on real hardware:** `make party`, scanned with two
+actual phones, on an actual television.
 
 **Decisions made along the way:**
 

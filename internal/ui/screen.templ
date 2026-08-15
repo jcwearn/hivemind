@@ -11,7 +11,8 @@ import "github.com/jcwearn/hivemind/internal/lobby"
 // correct.
 templ ScreenPage(s lobby.Snapshot, joinURL string, code QR) {
 	@Layout("hivemind " + s.Code) {
-		<main class="screen">
+		@templ.Raw(boardVars(s.State.Cfg))
+		<main class="screen" hx-ext="sse" sse-connect={ "/r/" + s.Code + "/screen/events" }>
 			<aside class="join-panel">
 				<p class="join-hint">join at</p>
 				<p class="join-url">{ joinURL }</p>
@@ -27,10 +28,14 @@ templ ScreenPage(s lobby.Snapshot, joinURL string, code QR) {
 				</svg>
 				<p class="room-code">{ s.Code }</p>
 			</aside>
-			<div class="stage" hx-ext="sse" sse-connect={ "/r/" + s.Code + "/screen/events" }>
-				<div id="screen-live" sse-swap="frame">
-					@ScreenFrame(s)
-				</div>
+			// The connection lives on <main> and the swap target is a direct grid
+			// child of it, carrying `display: contents`. An intermediate wrapper
+			// here would give the frame's children a formatting context of their
+			// own and they would never reach .screen's grid -- which is exactly
+			// what stacked the board and the rail vertically and pushed the vote
+			// tally off the bottom of the display.
+			<div id="screen-live" sse-swap="frame">
+				@ScreenFrame(s)
 			</div>
 		</main>
 	}
@@ -39,19 +44,11 @@ templ ScreenPage(s lobby.Snapshot, joinURL string, code QR) {
 // ScreenFrame is the part that changes: everything downstream of a tick.
 //
 // It is rendered once per tick and the same bytes go to every connected screen.
+// The two children are laid out by .screen's own grid rather than by this
+// element, which is why it carries `display: contents`. One swap target keeps
+// the room to a single rendered frame per tick; the grid still gets to place
+// the board and the rail as siblings in separate columns.
 templ ScreenFrame(s lobby.Snapshot) {
-	<div class="hud">
-		<span class="score">SCORE <b>{ itoa(s.State.Score) }</b></span>
-		<span class="lives" aria-label={ itoa(s.State.Lives) + " lives remaining" }>
-			{{ left, spent := lives(s) }}
-			for range left {
-				<i class="heart on"></i>
-			}
-			for range spent {
-				<i class="heart off"></i>
-			}
-		</span>
-	</div>
 	<div class="board-wrap">
 		<div class="board" aria-hidden="true">
 			for _, row := range rows(s.State) {
@@ -78,17 +75,31 @@ templ ScreenFrame(s lobby.Snapshot) {
 			</div>
 		}
 	</div>
-	@tally(s)
-	<ul class="roster">
-		for _, p := range s.Players {
-			<li class={ seatClass(p.Seat) }>
-				<span class="dot"></span>{ p.Name }
-			</li>
-		}
-		if len(s.Players) == 0 {
-			<li class="empty">nobody here yet</li>
-		}
-	</ul>
+	<aside class="rail">
+		<div class="hud">
+			<span class="score">SCORE <b>{ itoa(s.State.Score) }</b></span>
+			<span class="lives" aria-label={ itoa(s.State.Lives) + " lives remaining" }>
+				{{ left, spent := lives(s) }}
+				for range left {
+					<i class="heart on"></i>
+				}
+				for range spent {
+					<i class="heart off"></i>
+				}
+			</span>
+		</div>
+		@tally(s)
+		<ul class="roster">
+			for _, p := range s.Players {
+				<li class={ seatClass(p.Seat) }>
+					<span class="dot"></span>{ p.Name }
+				</li>
+			}
+			if len(s.Players) == 0 {
+				<li class="empty">nobody here yet</li>
+			}
+		</ul>
+	</aside>
 }
 
 // tally is the live vote bar. It is the single most important thing on the

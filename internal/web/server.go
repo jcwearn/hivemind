@@ -115,6 +115,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /r/{code}/play", s.handlePlay)
 	mux.HandleFunc("GET /r/{code}/play/events", s.handlePlayEvents)
 	mux.HandleFunc("POST /r/{code}/vote", s.handleVote)
+	mux.HandleFunc("POST /r/{code}/name", s.handleRename)
 	mux.HandleFunc("POST /r/{code}/start", s.handleStart)
 
 	mux.HandleFunc("GET /healthz", s.handleHealth)

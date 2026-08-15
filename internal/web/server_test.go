@@ -325,6 +325,92 @@ func TestForgedCookieIsRejected(t *testing.T) {
 	}
 }
 
+// Renaming from the controller has to reach the shared screen, because the
+// roster is the only place anybody else sees it.
+func TestRenameUpdatesTheRoster(t *testing.T) {
+	_, ts := testServer(t)
+	code := hostRoom(t, ts)
+	ana := join(t, ts, code, "ana")
+
+	frames, stop := readFrames(t, client(t, ts), ts.URL+"/r/"+code+"/screen/events")
+	defer stop()
+	waitForFrame(t, frames, func(f string) bool { return strings.Contains(f, "ana") })
+
+	resp, err := ana.PostForm(ts.URL+"/r/"+code+"/name", url.Values{"name": {"anastasia"}})
+	if err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	// The response is the input alone, so it can replace itself in place.
+	got := strings.TrimSpace(string(body))
+	if !strings.HasPrefix(got, "<input") {
+		t.Errorf("response is not a bare input: %.60q", got)
+	}
+	if !strings.Contains(got, `value="anastasia"`) {
+		t.Errorf("response does not carry the new name: %.120q", got)
+	}
+
+	waitForFrame(t, frames, func(f string) bool { return strings.Contains(f, "anastasia") })
+}
+
+// An unusable name must snap back rather than blanking the field or the roster.
+func TestRenameToNothingKeepsTheOldName(t *testing.T) {
+	_, ts := testServer(t)
+	code := hostRoom(t, ts)
+	ana := join(t, ts, code, "ana")
+
+	resp, err := ana.PostForm(ts.URL+"/r/"+code+"/name", url.Values{"name": {"   "}})
+	if err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+
+	if !strings.Contains(string(body), `value="ana"`) {
+		t.Errorf("blank rename did not snap back to the old name: %.120q", body)
+	}
+}
+
+func TestRenameIsClampedToTheLimit(t *testing.T) {
+	_, ts := testServer(t)
+	code := hostRoom(t, ts)
+	ana := join(t, ts, code, "ana")
+
+	resp, err := ana.PostForm(ts.URL+"/r/"+code+"/name", url.Values{"name": {strings.Repeat("x", 40)}})
+	if err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+
+	want := `value="` + strings.Repeat("x", maxNameLen) + `"`
+	if !strings.Contains(string(body), want) {
+		t.Errorf("name was not clamped to %d characters: %.160q", maxNameLen, body)
+	}
+}
+
+// A phone with no seat gets sent to the join page rather than silently failing.
+func TestRenameWithoutASeatRedirects(t *testing.T) {
+	_, ts := testServer(t)
+	code := hostRoom(t, ts)
+
+	c := client(t, ts)
+	resp, err := c.PostForm(ts.URL+"/r/"+code+"/name", url.Values{"name": {"ghost"}})
+	if err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	if got := resp.Header.Get("HX-Redirect"); got != "/j/"+code {
+		t.Errorf("HX-Redirect = %q, want /j/%s", got, code)
+	}
+}
+
 func TestVoteRejectsUnknownDirection(t *testing.T) {
 	_, ts := testServer(t)
 	code := hostRoom(t, ts)
@@ -439,13 +525,25 @@ func TestFramesSurviveSSEEncoding(t *testing.T) {
 
 	frame := waitForFrame(t, frames, func(f string) bool { return strings.Contains(f, "roster") })
 
-	// The fragment must be complete: opening hud through closing roster.
-	if !strings.HasPrefix(frame, `<div class="hud">`) {
-		t.Errorf("frame does not start with the hud: %.80q", frame)
+	// The frame carries two sibling subtrees -- the board and the rail -- so
+	// both ends and both halves have to arrive. Asserting the first and last
+	// tags rather than a specific class keeps this about truncation, which is
+	// what the test is for, rather than about the current layout.
+	if !strings.HasPrefix(frame, "<div ") {
+		t.Errorf("frame does not start with an element: %.80q", frame)
 	}
-	if !strings.HasSuffix(strings.TrimSpace(frame), "</ul>") {
-		t.Errorf("frame is truncated, does not end with </ul>: %.80q", frame[max(0, len(frame)-80):])
+	if !strings.HasSuffix(strings.TrimSpace(frame), "</aside>") {
+		t.Errorf("frame is truncated, does not end with </aside>: %.80q", frame[max(0, len(frame)-80):])
 	}
+
+	// One marker from each subtree. A frame cut at its first newline would keep
+	// the board and lose the rail entirely.
+	for _, want := range []string{`class="board"`, `class="tally"`, `class="roster"`} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("frame is missing %s -- it did not survive intact", want)
+		}
+	}
+
 	if strings.Contains(frame, "data: ") {
 		t.Error("frame contains an un-decoded SSE prefix")
 	}
