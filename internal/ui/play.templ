@@ -1,0 +1,87 @@
+package ui
+
+import "github.com/jcwearn/hivemind/internal/lobby"
+
+// PlayPage is the controller: four buttons and a status line, sized for a thumb.
+//
+// The buttons are OUTSIDE the SSE-swapped region, and that is a correctness
+// requirement rather than an optimisation. Swapping the controls out from under
+// somebody eight times a second would fight every tap, lose the :active state
+// mid-press, and re-run the entry animation on a surface a person is physically
+// touching. So the server owns the status, and the browser owns which button
+// looks pressed -- see selectVote in app.js.
+templ PlayPage(s lobby.Snapshot, me lobby.Player) {
+	@Layout("hivemind " + s.Code) {
+		<main class="play" data-room={ s.Code }>
+			<header class="play-head">
+				<span class={ seatClass(me.Seat) }><span class="dot"></span>{ me.Name }</span>
+				<span class="room-code sm">{ s.Code }</span>
+			</header>
+			<div hx-ext="sse" sse-connect={ "/r/" + s.Code + "/play/events" }>
+				<div id="play-live" sse-swap="frame">
+					@PlayFrame(s)
+				</div>
+			</div>
+			<div class="pad" role="group" aria-label="Steer">
+				@voteButton(s.Code, "up", "▲", "pad-up")
+				@voteButton(s.Code, "left", "◀", "pad-left")
+				@voteButton(s.Code, "right", "▶", "pad-right")
+				@voteButton(s.Code, "down", "▼", "pad-down")
+			</div>
+			<p class="play-hint">hold a direction. the room decides.</p>
+		</main>
+	}
+}
+
+// voteButton posts a vote and swaps nothing.
+//
+// hx-swap="none" is deliberate: the response carries no markup because the only
+// per-player state on this page is which button looks pressed, and the browser
+// already knows that the instant it is tapped. A round trip to learn what the
+// user just did would add latency to the one interaction that has to feel
+// immediate.
+templ voteButton(code, dir, glyph, class string) {
+	<button
+		type="button"
+		class={ "vote " + class }
+		data-dir={ dir }
+		aria-label={ dir }
+		hx-post={ "/r/" + code + "/vote" }
+		hx-vals={ `{"dir":"` + dir + `"}` }
+		hx-swap="none"
+	>{ glyph }</button>
+}
+
+// PlayFrame is the shared status every phone in the room receives.
+//
+// Identical for all of them, which is what lets one render serve the whole room.
+// Anything per-player would have to be rendered once per connection, and the
+// only genuinely per-player thing here -- your own selection -- is handled
+// client side instead.
+templ PlayFrame(s lobby.Snapshot) {
+	<div class="play-status">
+		if phaseHeadline(s) != "" {
+			<p class="headline sm">{ phaseHeadline(s) }</p>
+		}
+		<div class="hud sm">
+			<span class="score">SCORE <b>{ itoa(s.State.Score) }</b></span>
+			<span class="lives">
+				{{ left, spent := lives(s) }}
+				for range left {
+					<i class="heart on"></i>
+				}
+				for range spent {
+					<i class="heart off"></i>
+				}
+			</span>
+		</div>
+		@tally(s)
+		if canStart(s) {
+			<button
+				class="btn primary wide"
+				hx-post={ "/r/" + s.Code + "/start" }
+				hx-swap="none"
+			>{ startLabel(s) }</button>
+		}
+	</div>
+}
