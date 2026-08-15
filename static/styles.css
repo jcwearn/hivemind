@@ -194,11 +194,21 @@ a {
   padding: 0.6rem 0.75rem;
   text-align: center;
   text-transform: uppercase;
-  width: 7ch;
+  /* Sized in ch, but NOT simply one ch per character.
+   *
+   * box-sizing is border-box, so the declared width has to cover the padding
+   * and border as well as the glyphs -- and letter-spacing adds a gap after
+   * every character, including the last, which ch knows nothing about. At
+   * 7ch a four-character room code overflowed by about one glyph and the
+   * field scrolled, hiding the first letter exactly when someone had finished
+   * typing it. */
+  width: 9ch;
 }
 
 .name-input {
-  width: 11ch;
+  /* Twelve characters is the maxlength, and every one of them has to be
+   * visible while it is being typed. */
+  width: 17ch;
   letter-spacing: 0.12em;
   text-transform: none;
 }
@@ -542,6 +552,31 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+/* The name reads as text until it is touched, so the header stays a header
+ * rather than becoming a form. It is still a real input: focusable, labelled,
+ * and editable on the first tap. */
+.name-edit {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.15rem 0.3rem;
+  width: 8em;
+  min-width: 0;
+}
+
+.name-edit:hover {
+  border-color: var(--line);
+}
+
+.name-edit:focus {
+  background: var(--panel);
+  border-color: var(--accent-dim);
+  outline: none;
 }
 
 .play-status {
