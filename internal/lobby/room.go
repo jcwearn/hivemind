@@ -35,6 +35,28 @@ type PlayerID string
 // goroutine exits and the registry drops it.
 const idleTimeout = 10 * time.Minute
 
+// Per-room capacity.
+//
+// maxPlayers is a party-game number rather than a technical one -- a roster of
+// two dozen is already unreadable across a room -- but it also bounds the cost
+// of a join, which re-renders a roster that just grew by one. Without it, N
+// joins cost O(N^2) rendered bytes, and a cookie-less client is a brand new
+// player on every request.
+//
+// maxSubscribers bounds one room's share of the process-wide stream budget, so
+// a single room cannot starve the other ninety-nine.
+const (
+	maxPlayers     = 24
+	maxSubscribers = 40
+)
+
+// streamBudget is the process-wide subscriber accounting a room defers to.
+// *Registry implements it; tests substitute their own.
+type streamBudget interface {
+	acquireStream() bool
+	releaseStream()
+}
+
 // subscriber is one open SSE stream. The channel is buffered so a phone that
 // has stopped reading cannot stall the room goroutine -- see broadcast.
 type subscriber struct {
@@ -110,6 +132,10 @@ type Room struct {
 	log     *slog.Logger
 	render  RenderFunc
 	onClose func(code string)
+	// budget is the process-wide stream accounting, set by Registry.Create. Nil
+	// in tests that build a room directly, which then have only the per-room
+	// ceiling.
+	budget streamBudget
 
 	// Everything below is owned by run() and must not be touched from any other
 	// goroutine. No mutex guards them because none is needed.
@@ -168,6 +194,11 @@ func (r *Room) run() {
 	if r.onClose != nil {
 		defer r.onClose(r.Code)
 	}
+	// Hand back whatever this room still holds. A collected room's SSE handlers
+	// return when they see Done, and their deferred cancel then finds nothing
+	// to unsubscribe -- so without this the budget would leak by exactly the
+	// number of people who were watching when the room went away.
+	defer r.releaseAllStreams()
 
 	interval := game.TickInterval(r.state.Score)
 	ticker := time.NewTicker(interval)
@@ -205,10 +236,17 @@ func (r *Room) run() {
 // step advances the game one tick and pushes the result to everyone. It is
 // called only from run.
 func (r *Room) step() {
-	if r.state.Phase == game.PhasePlaying || r.state.Phase == game.PhaseCountdown {
-		dir := game.Tally(r.votes(), r.state.Dir)
-		r.state = game.Step(r.state, dir, r.rng)
+	// Lobby and game over are inert: nothing advances, and every command that
+	// changes what they look like already broadcasts for itself. Ticking a
+	// frame out anyway was pure waste -- a room sitting on its lobby screen
+	// rendered two full HTML fragments 2.5 times a second for as long as it
+	// existed.
+	if r.state.Phase != game.PhasePlaying && r.state.Phase != game.PhaseCountdown {
+		return
 	}
+
+	dir := game.Tally(r.votes(), r.state.Dir)
+	r.state = game.Step(r.state, dir, r.rng)
 	r.broadcast()
 }
 
@@ -265,6 +303,16 @@ func (r *Room) broadcast() {
 	if r.render == nil {
 		return
 	}
+
+	// Nobody is watching, so there is nothing to render FOR. Checked before
+	// r.render rather than inside the fan-out loop, which is the whole point:
+	// rendering first and then discovering the subscriber set was empty is how
+	// an abandoned room burned ~12 KB of HTML 2.5 times a second for its full
+	// ten-minute lifetime, and it is what made room flooding cheap.
+	if r.subscriberCount() == 0 {
+		return
+	}
+
 	frames := r.render(r.snapshot())
 
 	for kind, subs := range r.streams {
@@ -278,6 +326,20 @@ func (r *Room) broadcast() {
 			default:
 				r.dropped++
 			}
+		}
+	}
+}
+
+// releaseAllStreams returns every still-attached subscriber's budget unit. Runs
+// on the room goroutine as it exits, so it does not race the maps.
+func (r *Room) releaseAllStreams() {
+	if r.budget == nil {
+		return
+	}
+	for _, subs := range r.streams {
+		for sub := range subs {
+			delete(subs, sub)
+			r.budget.releaseStream()
 		}
 	}
 }
@@ -323,10 +385,17 @@ func (r *Room) Dropped() (int, error) {
 
 // --- commands ---
 
+// joinResult distinguishes "seated" from "the room is full", which the caller
+// has to tell apart to show the right page.
+type joinResult struct {
+	player Player
+	seated bool
+}
+
 type joinCmd struct {
 	id    PlayerID
 	name  string
-	reply chan Player
+	reply chan joinResult
 }
 
 func (c joinCmd) apply(r *Room) {
@@ -340,7 +409,7 @@ func (c joinCmd) apply(r *Room) {
 		if renamed {
 			p.Name = c.name
 		}
-		c.reply <- *p
+		c.reply <- joinResult{player: *p, seated: true}
 		// Only when something actually changed. Rejoining is common -- every
 		// reload of the controller does it -- and a broadcast per reload would
 		// be a frame nobody needs.
@@ -350,22 +419,31 @@ func (c joinCmd) apply(r *Room) {
 		return
 	}
 
+	// Checked only on the new-seat path, so a returning player is never locked
+	// out of a room they are already in.
+	if len(r.players) >= maxPlayers {
+		c.reply <- joinResult{}
+		return
+	}
+
 	p := &Player{ID: c.id, Name: c.name, Seat: r.nextSeat}
 	r.nextSeat++
 	r.players[c.id] = p
 	r.log.Info("player joined", "player", c.id, "name", c.name, "seat", p.Seat)
-	c.reply <- *p
+	c.reply <- joinResult{player: *p, seated: true}
 	r.broadcast()
 }
 
 // Join adds a player, or returns the existing one if this phone has been here
-// before.
-func (r *Room) Join(id PlayerID, name string) (Player, error) {
-	reply := make(chan Player, 1)
+// before. It reports false when the room is full, which is a normal outcome
+// rather than an error.
+func (r *Room) Join(id PlayerID, name string) (Player, bool, error) {
+	reply := make(chan joinResult, 1)
 	if err := r.send(joinCmd{id: id, name: name, reply: reply}); err != nil {
-		return Player{}, err
+		return Player{}, false, err
 	}
-	return <-reply, nil
+	res := <-reply
+	return res.player, res.seated, nil
 }
 
 // renameResult carries whether the player was in the room at all, which is how
@@ -442,6 +520,17 @@ func (c voteCmd) apply(r *Room) {
 	}
 	p.Vote = c.dir
 	c.reply <- true
+
+	// While a round is running the tick is already pushing a frame every few
+	// hundred milliseconds, and a broadcast per vote on top of that would make a
+	// room of twenty people quadratically noisy for no visible gain.
+	//
+	// Between rounds there is no tick, so this is the only thing that moves the
+	// tally on the shared screen -- and people absolutely do fiddle with the
+	// buttons while waiting for the host to press start.
+	if r.state.Phase != game.PhasePlaying && r.state.Phase != game.PhaseCountdown {
+		r.broadcast()
+	}
 }
 
 // Vote records a player's standing intention. It reports false if the player is
@@ -475,14 +564,33 @@ func (c startCmd) apply(r *Room) {
 // button cannot reset the score.
 func (r *Room) Start() error { return r.send(startCmd{}) }
 
+// subscribeResult reports whether the stream was accepted, and why not.
+type subscribeResult struct {
+	initial  []byte
+	accepted bool
+}
+
 type subscribeCmd struct {
 	kind  StreamKind
 	sub   *subscriber
-	reply chan []byte
+	reply chan subscribeResult
 }
 
 func (c subscribeCmd) apply(r *Room) {
 	r.lastSeen = time.Now()
+
+	if r.subscriberCount() >= maxSubscribers {
+		c.reply <- subscribeResult{}
+		return
+	}
+	// The process-wide budget is claimed on the room goroutine so the count and
+	// the map insert cannot disagree. Released by unsubscribeCmd, and by the
+	// run loop's exit path for anything still attached when a room closes.
+	if r.budget != nil && !r.budget.acquireStream() {
+		c.reply <- subscribeResult{}
+		return
+	}
+
 	r.streams[c.kind][c.sub] = struct{}{}
 
 	// The initial frame goes back on the reply channel rather than through the
@@ -493,9 +601,9 @@ func (c subscribeCmd) apply(r *Room) {
 		frames = r.render(r.snapshot())
 	}
 	if c.kind == PlayStream {
-		c.reply <- frames.Play
+		c.reply <- subscribeResult{initial: frames.Play, accepted: true}
 	} else {
-		c.reply <- frames.Screen
+		c.reply <- subscribeResult{initial: frames.Screen, accepted: true}
 	}
 }
 
@@ -505,7 +613,17 @@ type unsubscribeCmd struct {
 }
 
 func (c unsubscribeCmd) apply(r *Room) {
+	// Only release the budget if this subscriber was actually counted. cancel()
+	// is called from a defer and can run after a room has already torn down its
+	// subscribers, and double-releasing would hand out capacity that is still
+	// in use.
+	if _, ok := r.streams[c.kind][c.sub]; !ok {
+		return
+	}
 	delete(r.streams[c.kind], c.sub)
+	if r.budget != nil {
+		r.budget.releaseStream()
+	}
 	r.lastSeen = time.Now()
 }
 

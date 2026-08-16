@@ -23,6 +23,32 @@ const codeLength = 4
 // game -- so callers should treat it as a 500 rather than retrying.
 var ErrNoCode = errors.New("lobby: could not allocate a room code")
 
+// ErrTooManyRooms is returned when the registry is at capacity. Callers should
+// turn it into a 503 and say so: it is a temporary condition, not a fault.
+var ErrTooManyRooms = errors.New("lobby: too many rooms")
+
+// ErrTooManyStreams is returned when the process-wide subscriber budget is
+// exhausted. Also a 503.
+var ErrTooManyStreams = errors.New("lobby: too many streams")
+
+// Capacity. These exist because anyone on the internet can create a room, and
+// nothing else stops them.
+//
+// Rooms are cheap once an empty one stops rendering (see Room.broadcast), but
+// they are not free: each is a goroutine, two timers and a handful of maps, and
+// each survives at least idleTimeout before it can be collected. Without a
+// ceiling, creation rate times idleTimeout is the steady-state room count, and
+// a script reaches an unrecoverable number in well under a minute.
+//
+// maxStreams is the process-wide budget rather than a per-room one, because
+// per-room limits multiply: 100 rooms of 40 subscribers would be 4,000 open
+// connections at roughly 15-30 KB each. This is the number that actually bounds
+// memory.
+const (
+	maxRooms   = 100
+	maxStreams = 500
+)
+
 // Registry owns the set of live rooms.
 //
 // Its mutex is the only lock in this package, and it guards the map alone.
@@ -31,6 +57,10 @@ var ErrNoCode = errors.New("lobby: could not allocate a room code")
 type Registry struct {
 	mu    sync.RWMutex
 	rooms map[string]*Room
+	// streams is the process-wide count of open subscribers. It lives here
+	// rather than in Room because the budget is global -- a room cannot know
+	// what the other ninety-nine are using.
+	streams int
 
 	log    *slog.Logger
 	render RenderFunc
@@ -63,12 +93,19 @@ func (reg *Registry) Create() (*Room, error) {
 	opts.Seed = seed
 
 	reg.mu.Lock()
+	// Checked under the same lock that inserts, so concurrent creates cannot
+	// both see room for one more.
+	if len(reg.rooms) >= maxRooms {
+		reg.mu.Unlock()
+		return nil, ErrTooManyRooms
+	}
 	code, err := reg.freeCodeLocked()
 	if err != nil {
 		reg.mu.Unlock()
 		return nil, err
 	}
 	room := newRoom(code, opts, reg.remove)
+	room.budget = reg
 	reg.rooms[code] = room
 	count := len(reg.rooms)
 	reg.mu.Unlock()
@@ -146,6 +183,40 @@ func (reg *Registry) Count() int {
 	reg.mu.RLock()
 	defer reg.mu.RUnlock()
 	return len(reg.rooms)
+}
+
+// Streams reports how many subscribers are open across every room.
+func (reg *Registry) Streams() int {
+	reg.mu.RLock()
+	defer reg.mu.RUnlock()
+	return reg.streams
+}
+
+// acquireStream claims one unit of the process-wide subscriber budget.
+//
+// It is deliberately a Registry method taking the whole-process view: a room
+// asking "may I accept another stream" cannot answer that itself. Rooms reach
+// it through the streamBudget interface so the package's tests can exercise a
+// room without standing up a registry.
+func (reg *Registry) acquireStream() bool {
+	reg.mu.Lock()
+	defer reg.mu.Unlock()
+	if reg.streams >= maxStreams {
+		return false
+	}
+	reg.streams++
+	return true
+}
+
+// releaseStream returns a unit of the budget. Releasing more than was acquired
+// would be a bug in Room's subscribe/unsubscribe pairing, so it floors at zero
+// rather than going negative and hiding it.
+func (reg *Registry) releaseStream() {
+	reg.mu.Lock()
+	defer reg.mu.Unlock()
+	if reg.streams > 0 {
+		reg.streams--
+	}
 }
 
 // Close stops every room and waits for each goroutine to exit.

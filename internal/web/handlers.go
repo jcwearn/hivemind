@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"unicode"
@@ -22,6 +23,14 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 	room, err := s.rooms.Create()
+	if errors.Is(err, lobby.ErrTooManyRooms) {
+		// Capacity, not breakage. Logged at info because it is expected under
+		// load and only interesting as a signal that the cap is being reached.
+		s.log.Info("room creation refused, at capacity", "rooms", s.rooms.Count())
+		s.page(w, r, http.StatusServiceUnavailable,
+			ui.Home("too many games running right now. try again in a minute."))
+		return
+	}
 	if err != nil {
 		s.log.Error("create room", "error", err)
 		s.page(w, r, http.StatusInternalServerError, ui.Home("could not start a game just now."))
@@ -66,8 +75,13 @@ func (s *Server) handleJoinSubmit(w http.ResponseWriter, r *http.Request) {
 	// Before any body is written, because it sets a cookie.
 	id := s.cookies.playerID(w, r)
 
-	if _, err := room.Join(id, name); err != nil {
+	_, seated, err := room.Join(id, name)
+	if err != nil {
 		s.page(w, r, http.StatusNotFound, ui.NotFound(code))
+		return
+	}
+	if !seated {
+		s.page(w, r, http.StatusConflict, ui.JoinPage(code, "that game is full."))
 		return
 	}
 	http.Redirect(w, r, "/r/"+code+"/play", http.StatusSeeOther)
@@ -221,6 +235,22 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+
+	// Starting a round is a member's action. Without this check anyone holding
+	// a room code could restart a stranger's game from across the internet --
+	// and, because Start broadcasts, could drive a room's render rate at will.
+	id := s.cookies.playerID(w, r)
+	snap, err := room.Snapshot()
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, member := findPlayer(snap, id); !member {
+		w.Header().Set("HX-Redirect", "/j/"+room.Code)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	if err := room.Start(); err != nil {
 		http.NotFound(w, r)
 		return
