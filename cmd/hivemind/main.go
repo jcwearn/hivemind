@@ -56,7 +56,16 @@ func run() error {
 		// held open deliberately -- see web.Server.stream.
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
-		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
+		// Bounds a slow-drip request body. ReadHeaderTimeout alone covers the
+		// classic header slowloris but not a client that sends headers promptly
+		// and then trickles a body for an hour. Safe to set even though
+		// WriteTimeout is not: this is the read side, and an SSE response reads
+		// nothing after its request line.
+		ReadTimeout: 30 * time.Second,
+		// The default is 1 MiB, which is a lot of memory to let an unauthenticated
+		// client reserve just by declaring headers.
+		MaxHeaderBytes: 16 << 10,
+		ErrorLog:       slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

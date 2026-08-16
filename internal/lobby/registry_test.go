@@ -1,6 +1,7 @@
 package lobby
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -158,6 +159,117 @@ func TestNormalizeCode(t *testing.T) {
 	for _, tt := range tests {
 		if got := NormalizeCode(tt.in); got != tt.want {
 			t.Errorf("NormalizeCode(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestCreateRefusesPastTheRoomCap(t *testing.T) {
+	reg := NewRegistry(testOptions())
+	t.Cleanup(reg.Close)
+
+	for i := range maxRooms {
+		if _, err := reg.Create(); err != nil {
+			t.Fatalf("Create %d of %d failed early: %v", i+1, maxRooms, err)
+		}
+	}
+
+	if _, err := reg.Create(); !errors.Is(err, ErrTooManyRooms) {
+		t.Errorf("Create past the cap returned %v, want ErrTooManyRooms", err)
+	}
+	if got := reg.Count(); got != maxRooms {
+		t.Errorf("Count = %d, want %d", got, maxRooms)
+	}
+}
+
+// Capacity has to come back when rooms go away, or the process degrades into
+// permanently refusing games after one busy evening.
+func TestClosingARoomFreesCapacity(t *testing.T) {
+	reg := NewRegistry(testOptions())
+	t.Cleanup(reg.Close)
+
+	rooms := make([]*Room, 0, maxRooms)
+	for range maxRooms {
+		room, err := reg.Create()
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		rooms = append(rooms, room)
+	}
+
+	rooms[0].close()
+
+	deadline := time.After(2 * time.Second)
+	for reg.Count() >= maxRooms {
+		select {
+		case <-deadline:
+			t.Fatal("closed room never left the registry")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+
+	if _, err := reg.Create(); err != nil {
+		t.Errorf("Create after a close failed: %v", err)
+	}
+}
+
+func TestStreamBudgetIsProcessWideAndReturned(t *testing.T) {
+	reg := NewRegistry(testOptions())
+	t.Cleanup(reg.Close)
+
+	room, err := reg.Create()
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	_, _, cancel, err := room.Stream(ScreenStream)
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if got := reg.Streams(); got != 1 {
+		t.Fatalf("Streams = %d after one subscribe, want 1", got)
+	}
+
+	cancel()
+
+	deadline := time.After(2 * time.Second)
+	for reg.Streams() != 0 {
+		select {
+		case <-deadline:
+			t.Fatalf("Streams = %d after cancel, want 0 -- the budget leaked", reg.Streams())
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+}
+
+// A room that closes with viewers still attached must hand their budget back.
+// Their SSE handlers return on Done and their deferred cancel finds nothing to
+// unsubscribe, so without the room's own cleanup the budget would leak by
+// exactly the number of people who were watching.
+func TestClosingARoomReturnsItsStreamBudget(t *testing.T) {
+	reg := NewRegistry(testOptions())
+	t.Cleanup(reg.Close)
+
+	room, err := reg.Create()
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	for range 3 {
+		if _, _, _, err := room.Stream(ScreenStream); err != nil {
+			t.Fatalf("Stream: %v", err)
+		}
+	}
+	if got := reg.Streams(); got != 3 {
+		t.Fatalf("Streams = %d, want 3", got)
+	}
+
+	room.close()
+
+	deadline := time.After(2 * time.Second)
+	for reg.Streams() != 0 {
+		select {
+		case <-deadline:
+			t.Fatalf("Streams = %d after the room closed, want 0", reg.Streams())
+		case <-time.After(5 * time.Millisecond):
 		}
 	}
 }

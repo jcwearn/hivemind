@@ -121,7 +121,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", staticHandler()))
 
-	return recoverer(s.log)(requestLog(s.log)(mux))
+	return recoverer(s.log)(requestLog(s.log)(limitBody(mux)))
 }
 
 // staticHandler serves the embedded assets.
