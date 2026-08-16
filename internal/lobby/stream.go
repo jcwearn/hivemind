@@ -16,11 +16,15 @@ func (r *Room) Stream(kind StreamKind) (initial []byte, frames <-chan []byte, ca
 	// from wifi to cellular without dropping anything.
 	sub := &subscriber{ch: make(chan []byte, 4)}
 
-	reply := make(chan []byte, 1)
+	reply := make(chan subscribeResult, 1)
 	if err := r.send(subscribeCmd{kind: kind, sub: sub, reply: reply}); err != nil {
 		return nil, nil, nil, err
 	}
-	initial = <-reply
+	res := <-reply
+	if !res.accepted {
+		return nil, nil, nil, ErrTooManyStreams
+	}
+	initial = res.initial
 
 	cancel = func() {
 		// Best effort: if the room has already exited there is nothing to
