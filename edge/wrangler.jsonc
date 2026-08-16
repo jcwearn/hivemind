@@ -1,0 +1,46 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hivemind",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+
+  "observability": { "enabled": true },
+
+  // The public front door. custom_domain provisions the DNS record and the
+  // certificate on the jacksonwearn.com zone.
+  //
+  // The internal hostname is deliberately NOT here: it belongs to the k3s
+  // deployment, which stays as the internal instance. Different zone, different
+  // process, different rooms.
+  "routes": [{ "pattern": "hivemind.jacksonwearn.com", "custom_domain": true }],
+
+  // No workers.dev URL. One public address is enough, and a second one would be
+  // an unprotected way around whatever rules sit on the custom domain.
+  "workers_dev": false,
+
+  "containers": [
+    {
+      "class_name": "HivemindContainer",
+      // The Dockerfile lives at the repo root because it is the app's, not the
+      // edge wrapper's. image_build_context points the build there so COPY
+      // cmd/ internal/ static/ resolves -- the root .dockerignore is
+      // deny-all-then-allow, so this directory is excluded from the image
+      // automatically.
+      "image": "../Dockerfile",
+      "image_build_context": "..",
+      // 1/16 vCPU, 256 MiB, 2 GB disk. Measured as sufficient: a live game
+      // held a 400ms median tick through the edge with no drift, and 100 idle
+      // rooms cost ~1.4% of a core.
+      "instance_type": "lite",
+      // One instance, because every room lives in one process's memory. This is
+      // the same constraint as replicas: 1 on the k3s side, for the same reason.
+      "max_instances": 1
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [{ "name": "HIVEMIND", "class_name": "HivemindContainer" }]
+  },
+
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HivemindContainer"] }]
+}

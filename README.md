@@ -178,9 +178,21 @@ stage entirely — at the cost that generated output can go stale, which
 
 ## Deployment
 
+Two instances, deliberately, on different domains:
+
+| | Host | Runs on | Reachable from |
+|---|---|---|---|
+| **Public** | `hivemind.jacksonwearn.com` | Cloudflare Container ([`edge/`](edge/)) | anywhere |
+| **Internal** | a private hostname | k3s homelab | the tailnet |
+
+They are separate processes with separate rooms — the internal one is the
+staging environment. See [`edge/README.md`](edge/README.md) for the public path.
+
 The image is `ghcr.io/jcwearn/hivemind`, published by
 [`jcwearn/workflows`](https://github.com/jcwearn/workflows)'s shared
-`release.yaml` on merge, tagged `1.2.3` / `1.2` / `1` / `sha-abc1234`.
+`release.yaml` on merge, tagged `1.2.3` / `1.2` / `1` / `sha-abc1234`. The
+container deployment builds its own image from the same Dockerfile, because
+Cloudflare cannot pull from GHCR.
 
 **Run exactly one replica.** Room state is in memory by design — there is no
 database, nothing is persisted, and rooms are collected ten minutes after the
