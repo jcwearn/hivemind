@@ -14,3 +14,7 @@
 # Coverage
 *.out
 coverage.html
+
+# Edge worker deps (installed by Workers Builds / npm ci)
+edge/node_modules/
+edge/.wrangler/
