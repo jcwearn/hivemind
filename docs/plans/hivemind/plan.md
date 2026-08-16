@@ -225,7 +225,7 @@ Arcade/CRT styling, mobile ergonomics (large touch targets, no zoom on tap, view
 2. **Separate PR to `jcwearn/k3s-cluster`**: Deployment, Service, and the FluxCD wiring.
    - **`replicas: 1`, `strategy: Recreate`.** Non-negotiable: room state is in-memory, so two pods must never serve simultaneously. Put the reason in a manifest comment.
    - Generous `terminationGracePeriodSeconds`, liveness/readiness on `/healthz`, a tight `resources` block (a Go binary serving a 20×20 grid needs very little), and a read-only root filesystem.
-3. **Cloudflare Tunnel**: route `hivemind.wearn.dev` → `http://hivemind.hivemind.svc.cluster.local:8080`. `flux-cluster` already uses Tunnel, so follow whatever pattern is established there. Tunnel is free and fully supports SSE and WebSockets; no Cloudflare-side configuration is needed beyond the hostname.
+3. **Cloudflare Tunnel**: route the internal hostname → `http://hivemind.hivemind.svc.cluster.local:8080`. `flux-cluster` already uses Tunnel, so follow whatever pattern is established there. Tunnel is free and fully supports SSE and WebSockets; no Cloudflare-side configuration is needed beyond the hostname.
 4. Add hivemind to the portfolio page in `jcwearn/jackson-wearn`.
 
 ## Phase 6 — Later, only if it earns it
@@ -245,7 +245,7 @@ Add a second game (Committee Tetris or a bomb-party word game), and **extract th
 
 **Manual, the part that actually matters** — run `make run`, open the screen on a laptop, scan the QR with two real phones on the same network, and play a round. Then confirm a phone that locks and wakes rejoins its seat. Verify with `docker run` against the built image before deploying.
 
-**Post-deploy** — hit `hivemind.wearn.dev` from cellular (not just LAN) and confirm the SSE stream stays open past 100 seconds. That's the specific thing the heartbeat exists to prove, and the failure mode Cloudflare would otherwise introduce.
+**Post-deploy** — hit the public hostname from cellular (not just LAN) and confirm the SSE stream stays open past 100 seconds. That's the specific thing the heartbeat exists to prove, and the failure mode Cloudflare would otherwise introduce.
 
 ---
 
@@ -253,7 +253,7 @@ Add a second game (Committee Tetris or a bomb-party word game), and **extract th
 
 - Whether `golangci-lint-action`'s binary install exports `PATH` for a following `golangci-lint fmt --diff` step (fall back to `gofmt -l`).
 - Renovate custom manager for `.golangci-lint-version` in `jcwearn/renovate-config`.
-- Whether `wearn.dev` or a new domain is the right home. `hivemind.wearn.dev` is assumed throughout.
+- Which domain is the right home for the public instance.
 
 ## Git workflow note
 

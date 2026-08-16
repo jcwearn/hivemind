@@ -69,4 +69,4 @@ actual phones, on an actual television.
 **Next session:** merge workflows#18 first, then confirm this repo's CI goes
 green. Phase 4 (README GIF, late-join spectator view) and Phase 5 (k3s manifests
 in a separate PR to jcwearn/k3s-cluster, plus the Cloudflare Tunnel hostname for
-hivemind.wearn.dev) are both unstarted.
+the internal hostname) are both unstarted.

@@ -1,0 +1,57 @@
+name: Edge CI
+
+# The second bespoke workflow in this repo, kept local for the same reason as
+# codegen.yml: the shared go-ci.yaml describes what every Go repo checks, and a
+# TypeScript Worker is this repo's choice rather than every repo's.
+#
+# Deliberately NOT wired to jcwearn/workflows' node-ci.yaml. That file's
+# contract is .node-version, a lockfile, and format:check / lint / typecheck /
+# test / build scripts -- a reasonable ask of a real frontend, and a lot of
+# ceremony for ~100 lines of glue whose only real failure mode is a type error.
+# If edge/ ever grows into something with tests worth running, it should adopt
+# the shared workflow rather than growing this one.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: edge-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  typecheck:
+    name: Typecheck the edge worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: edge
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: edge/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      # Catches a malformed wrangler.jsonc, a bad binding or a Dockerfile path
+      # that does not resolve -- without needing Docker or credentials, since
+      # --dry-run stops before the image build.
+      - name: Validate the wrangler config
+        run: npx wrangler deploy --dry-run --outdir /tmp/edge-build
