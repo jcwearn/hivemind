@@ -221,11 +221,31 @@ Arcade/CRT styling, mobile ergonomics (large touch targets, no zoom on tap, view
 
 ## Phase 5 — Ship it
 
-1. Merge + tag Phase 0, then merge a `release:minor` PR on hivemind → `release.yaml` publishes `ghcr.io/jcwearn/hivemind:{1.2.3,1.2,1,sha-abc1234}`.
-2. **Separate PR to `jcwearn/k3s-cluster`**: Deployment, Service, and the FluxCD wiring.
-   - **`replicas: 1`, `strategy: Recreate`.** Non-negotiable: room state is in-memory, so two pods must never serve simultaneously. Put the reason in a manifest comment.
-   - Generous `terminationGracePeriodSeconds`, liveness/readiness on `/healthz`, a tight `resources` block (a Go binary serving a 20×20 grid needs very little), and a read-only root filesystem.
-3. **Cloudflare Tunnel**: route the internal hostname → `http://hivemind.hivemind.svc.cluster.local:8080`. `flux-cluster` already uses Tunnel, so follow whatever pattern is established there. Tunnel is free and fully supports SSE and WebSockets; no Cloudflare-side configuration is needed beyond the hostname.
+**This phase changed materially during execution.** The original plan put the
+public instance on the k3s homelab behind Cloudflare Tunnel. What shipped
+instead is two instances, and the reasoning is worth keeping:
+
+1. Merge + tag Phase 0, then merge a `release:minor` PR on hivemind →
+   `release.yaml` publishes `ghcr.io/jcwearn/hivemind:{1.2.3,1.2,1,sha-abc1234}`.
+2. **Internal instance — PR to `jcwearn/k3s-cluster`**: Deployment, Service,
+   HTTPRoute and FluxCD wiring, reachable from the tailnet only.
+   - **`replicas: 1`, `strategy: Recreate`.** Non-negotiable: room state is
+     in-memory, so two pods must never serve simultaneously.
+   - A `BackendTrafficPolicy` raising Envoy's timeouts, because its 300s default
+     would sever every SSE stream mid-round on a five-minute cadence.
+3. **Public instance — Cloudflare Containers** (`edge/`), not Cloudflare Tunnel
+   and not Tailscale Funnel.
+   - Funnel was ruled out empirically: it serves TLS only for its own `.ts.net`
+     name, and connecting to the relay with a different SNI returns
+     `no peer certificate available` — a hard handshake failure. Reaching a
+     custom hostname would have required Cloudflare to proxy it anyway.
+   - Containers keeps the homelab out of the public path entirely and makes the
+     link independent of home uptime, which is the better property for something
+     linked from a portfolio.
+   - Gated on a throwaway spike first, because two behaviours were undocumented
+     and either would have sunk the design: whether SSE survives the
+     Worker → Durable Object → container path, and whether an open stream keeps
+     the container awake. Both passed; see the measurements in `edge/README.md`.
 4. Add hivemind to the portfolio page in `jcwearn/jackson-wearn`.
 
 ## Phase 6 — Later, only if it earns it
