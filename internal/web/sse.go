@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"time"
@@ -35,6 +36,13 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request, kind lobby.Strea
 	}
 
 	initial, frames, cancel, err := room.Stream(kind)
+	if errors.Is(err, lobby.ErrTooManyStreams) {
+		// The process is at its connection budget. 503 with Retry-After is the
+		// honest answer -- the client should come back, not give up.
+		w.Header().Set("Retry-After", "10")
+		http.Error(w, "too many viewers right now", http.StatusServiceUnavailable)
+		return
+	}
 	if err != nil {
 		http.NotFound(w, r)
 		return

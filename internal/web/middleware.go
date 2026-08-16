@@ -9,6 +9,36 @@ import (
 	"time"
 )
 
+// maxRequestBody is the ceiling on anything a client can POST.
+//
+// The largest legitimate body here is a twelve-character name or a
+// four-character room code -- a few dozen bytes. 4 KB is generous enough to
+// never be hit by a real client and small enough that the expansion this app
+// does on form values cannot matter.
+//
+// Without it, r.FormValue falls back to net/http's 10 MiB default, and the
+// handlers amplify from there: NormalizeCode uppercases the whole thing,
+// sanitizeName converts it to []rune at 4 bytes each, and an unknown code is
+// concatenated into an error message and HTML-escaped. One request could hold
+// tens of megabytes; a handful of them could exhaust the container.
+const maxRequestBody = 4 << 10
+
+// limitBody caps request bodies on everything except the event streams, which
+// have no body to speak of and must not have their long-lived responses
+// disturbed.
+//
+// MaxBytesReader makes the read fail rather than merely truncating, so an
+// oversized body surfaces as a handler error instead of silently becoming a
+// short one.
+func limitBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil && r.Method != http.MethodGet && r.Method != http.MethodHead {
+			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // statusRecorder captures the status code for the log line. net/http gives no
 // other way to see what a handler wrote.
 type statusRecorder struct {
