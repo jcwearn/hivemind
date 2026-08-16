@@ -470,14 +470,15 @@ func TestTwoPlayersVoteAndTheScreenAgrees(t *testing.T) {
 func TestStartBeginsARound(t *testing.T) {
 	_, ts := testServer(t)
 	code := hostRoom(t, ts)
-	join(t, ts, code, "ana")
+	ana := join(t, ts, code, "ana")
 
 	frames, stop := readFrames(t, client(t, ts), ts.URL+"/r/"+code+"/screen/events")
 	defer stop()
 
 	waitForFrame(t, frames, func(f string) bool { return strings.Contains(f, "READY WHEN YOU ARE") })
 
-	resp, err := http.Post(ts.URL+"/r/"+code+"/start", "", nil)
+	// Started by a member: /start is a member's action now.
+	resp, err := ana.PostForm(ts.URL+"/r/"+code+"/start", nil)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -581,6 +582,47 @@ func TestStreamEndsWhenServerShutsDown(t *testing.T) {
 		case <-deadline:
 			t.Fatal("stream did not end after shutdown")
 		}
+	}
+}
+
+// The cheapest kill before this: a 10 MB body on a route that needs no cookie
+// and no room, amplified by uppercasing, rune conversion and HTML escaping.
+func TestOversizedBodyIsRejected(t *testing.T) {
+	_, ts := testServer(t)
+
+	huge := strings.Repeat("A", 1<<20) // 1 MiB, well past the 4 KB ceiling
+	c := client(t, ts)
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
+	resp, err := c.PostForm(ts.URL+"/join", url.Values{"code": {huge}})
+	if err != nil {
+		// A transport error is an acceptable outcome too -- MaxBytesReader may
+		// close the connection rather than let the handler answer.
+		return
+	}
+	_ = resp.Body.Close()
+
+	if resp.StatusCode == http.StatusSeeOther {
+		t.Errorf("an oversized body was processed normally (status %d)", resp.StatusCode)
+	}
+}
+
+// /start is a member's action. Without this a stranger holding a room code
+// could restart somebody's game, and drive the room's render rate while doing it.
+func TestStartWithoutASeatIsRefused(t *testing.T) {
+	_, ts := testServer(t)
+	code := hostRoom(t, ts)
+	join(t, ts, code, "ana")
+
+	c := client(t, ts)
+	resp, err := c.PostForm(ts.URL+"/r/"+code+"/start", nil)
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	if got := resp.Header.Get("HX-Redirect"); got != "/j/"+code {
+		t.Errorf("HX-Redirect = %q, want /j/%s -- a non-member started a round", got, code)
 	}
 }
 

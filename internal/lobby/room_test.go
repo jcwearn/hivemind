@@ -49,9 +49,9 @@ func TestJoinAssignsSeatsInOrder(t *testing.T) {
 	r := idleRoom(t)
 
 	for i, name := range []string{"ana", "sam", "jax"} {
-		reply := make(chan Player, 1)
+		reply := make(chan joinResult, 1)
 		joinCmd{id: PlayerID(name), name: name, reply: reply}.apply(r)
-		p := <-reply
+		p := (<-reply).player
 		if p.Seat != i {
 			t.Errorf("%s seat = %d, want %d", name, p.Seat, i)
 		}
@@ -68,14 +68,14 @@ func TestJoinAssignsSeatsInOrder(t *testing.T) {
 func TestJoinTwiceKeepsSeat(t *testing.T) {
 	r := idleRoom(t)
 
-	first := make(chan Player, 1)
+	first := make(chan joinResult, 1)
 	joinCmd{id: "ana", name: "ana", reply: first}.apply(r)
-	joinCmd{id: "sam", name: "sam", reply: make(chan Player, 1)}.apply(r)
+	joinCmd{id: "sam", name: "sam", reply: make(chan joinResult, 1)}.apply(r)
 
-	again := make(chan Player, 1)
+	again := make(chan joinResult, 1)
 	joinCmd{id: "ana", name: "ana", reply: again}.apply(r)
 
-	was, now := <-first, <-again
+	was, now := (<-first).player, (<-again).player
 	if now.Seat != was.Seat {
 		t.Errorf("seat changed on reconnect: %d, want %d", now.Seat, was.Seat)
 	}
@@ -87,19 +87,19 @@ func TestJoinTwiceKeepsSeat(t *testing.T) {
 func TestJoinTwiceUpdatesName(t *testing.T) {
 	r := idleRoom(t)
 
-	joinCmd{id: "ana", name: "ana", reply: make(chan Player, 1)}.apply(r)
+	joinCmd{id: "ana", name: "ana", reply: make(chan joinResult, 1)}.apply(r)
 
-	reply := make(chan Player, 1)
+	reply := make(chan joinResult, 1)
 	joinCmd{id: "ana", name: "anastasia", reply: reply}.apply(r)
 
-	if got := (<-reply).Name; got != "anastasia" {
+	if got := (<-reply).player.Name; got != "anastasia" {
 		t.Errorf("Name = %q, want %q", got, "anastasia")
 	}
 }
 
 func TestVoteRequiresMembership(t *testing.T) {
 	r := idleRoom(t)
-	joinCmd{id: "ana", name: "ana", reply: make(chan Player, 1)}.apply(r)
+	joinCmd{id: "ana", name: "ana", reply: make(chan joinResult, 1)}.apply(r)
 
 	ok := make(chan bool, 1)
 	voteCmd{id: "ana", dir: game.DirUp, reply: ok}.apply(r)
@@ -121,7 +121,7 @@ func TestVoteRequiresMembership(t *testing.T) {
 // direction instead of having to tap eight times a second.
 func TestVotesPersistAcrossTicks(t *testing.T) {
 	r := idleRoom(t)
-	joinCmd{id: "ana", name: "ana", reply: make(chan Player, 1)}.apply(r)
+	joinCmd{id: "ana", name: "ana", reply: make(chan joinResult, 1)}.apply(r)
 	voteCmd{id: "ana", dir: game.DirUp, reply: make(chan bool, 1)}.apply(r)
 	startCmd{}.apply(r)
 
@@ -154,7 +154,7 @@ func TestStartIsIdempotentMidRound(t *testing.T) {
 
 func TestLeaveRemovesPlayer(t *testing.T) {
 	r := idleRoom(t)
-	joinCmd{id: "ana", name: "ana", reply: make(chan Player, 1)}.apply(r)
+	joinCmd{id: "ana", name: "ana", reply: make(chan joinResult, 1)}.apply(r)
 
 	leaveCmd{id: "ana"}.apply(r)
 
@@ -168,7 +168,7 @@ func TestLeaveRemovesPlayer(t *testing.T) {
 func TestSnapshotSortsBySeatAndExcludesBlockedVotes(t *testing.T) {
 	r := idleRoom(t)
 	for _, name := range []string{"ana", "sam", "jax"} {
-		joinCmd{id: PlayerID(name), name: name, reply: make(chan Player, 1)}.apply(r)
+		joinCmd{id: PlayerID(name), name: name, reply: make(chan joinResult, 1)}.apply(r)
 	}
 
 	r.state.Dir = game.DirRight
@@ -230,7 +230,7 @@ func TestSlowSubscriberDoesNotBlockTheRoom(t *testing.T) {
 	}()
 
 	for i := range 20 {
-		done := make(chan Player, 1)
+		done := make(chan joinResult, 1)
 		if err := r.send(joinCmd{id: PlayerID(fmt.Sprint(i)), name: "p", reply: done}); err != nil {
 			t.Fatalf("join %d: %v", i, err)
 		}
@@ -318,7 +318,7 @@ func TestCallsIntoAClosedRoomFail(t *testing.T) {
 	go r.run()
 	r.close()
 
-	if _, err := r.Join("ana", "ana"); !errors.Is(err, ErrRoomClosed) {
+	if _, _, err := r.Join("ana", "ana"); !errors.Is(err, ErrRoomClosed) {
 		t.Errorf("Join error = %v, want ErrRoomClosed", err)
 	}
 	if _, err := r.Snapshot(); !errors.Is(err, ErrRoomClosed) {
@@ -347,12 +347,12 @@ func (c countStreamsCmd) apply(r *Room) { c.reply <- r.subscriberCount() }
 
 func TestRenameChangesTheNameAndBroadcasts(t *testing.T) {
 	r := idleRoom(t)
-	joinCmd{id: "ana", name: "ana", reply: make(chan Player, 1)}.apply(r)
+	joinCmd{id: "ana", name: "ana", reply: make(chan joinResult, 1)}.apply(r)
 
 	// A subscriber is the only way to observe that the roster was re-sent, and
 	// the roster is the only place a rename is visible to anybody else.
 	sub := &subscriber{ch: make(chan []byte, 4)}
-	subscribeCmd{kind: ScreenStream, sub: sub, reply: make(chan []byte, 1)}.apply(r)
+	subscribeCmd{kind: ScreenStream, sub: sub, reply: make(chan subscribeResult, 1)}.apply(r)
 	drain(sub.ch)
 
 	reply := make(chan renameResult, 1)
@@ -375,10 +375,10 @@ func TestRenameChangesTheNameAndBroadcasts(t *testing.T) {
 
 func TestRenameKeepsTheSeat(t *testing.T) {
 	r := idleRoom(t)
-	first := make(chan Player, 1)
+	first := make(chan joinResult, 1)
 	joinCmd{id: "ana", name: "ana", reply: first}.apply(r)
-	joinCmd{id: "sam", name: "sam", reply: make(chan Player, 1)}.apply(r)
-	was := <-first
+	joinCmd{id: "sam", name: "sam", reply: make(chan joinResult, 1)}.apply(r)
+	was := (<-first).player
 
 	reply := make(chan renameResult, 1)
 	renameCmd{id: "ana", name: "anastasia", reply: reply}.apply(r)
@@ -409,10 +409,10 @@ func TestRenameDoesNotCreateAPlayer(t *testing.T) {
 
 func TestRenameToTheSameNameDoesNotBroadcast(t *testing.T) {
 	r := idleRoom(t)
-	joinCmd{id: "ana", name: "ana", reply: make(chan Player, 1)}.apply(r)
+	joinCmd{id: "ana", name: "ana", reply: make(chan joinResult, 1)}.apply(r)
 
 	sub := &subscriber{ch: make(chan []byte, 4)}
-	subscribeCmd{kind: ScreenStream, sub: sub, reply: make(chan []byte, 1)}.apply(r)
+	subscribeCmd{kind: ScreenStream, sub: sub, reply: make(chan subscribeResult, 1)}.apply(r)
 	drain(sub.ch)
 
 	renameCmd{id: "ana", name: "ana", reply: make(chan renameResult, 1)}.apply(r)
@@ -426,18 +426,18 @@ func TestRenameToTheSameNameDoesNotBroadcast(t *testing.T) {
 // frame unless something actually changed.
 func TestRejoinBroadcastsOnlyWhenTheNameChanges(t *testing.T) {
 	r := idleRoom(t)
-	joinCmd{id: "ana", name: "ana", reply: make(chan Player, 1)}.apply(r)
+	joinCmd{id: "ana", name: "ana", reply: make(chan joinResult, 1)}.apply(r)
 
 	sub := &subscriber{ch: make(chan []byte, 4)}
-	subscribeCmd{kind: ScreenStream, sub: sub, reply: make(chan []byte, 1)}.apply(r)
+	subscribeCmd{kind: ScreenStream, sub: sub, reply: make(chan subscribeResult, 1)}.apply(r)
 	drain(sub.ch)
 
-	joinCmd{id: "ana", name: "ana", reply: make(chan Player, 1)}.apply(r)
+	joinCmd{id: "ana", name: "ana", reply: make(chan joinResult, 1)}.apply(r)
 	if len(sub.ch) != 0 {
 		t.Error("an unchanged rejoin broadcast a frame")
 	}
 
-	joinCmd{id: "ana", name: "anastasia", reply: make(chan Player, 1)}.apply(r)
+	joinCmd{id: "ana", name: "anastasia", reply: make(chan joinResult, 1)}.apply(r)
 	if len(sub.ch) == 0 {
 		t.Error("a rejoin under a new name did not broadcast")
 	}
@@ -451,5 +451,160 @@ func drain(ch chan []byte) {
 		default:
 			return
 		}
+	}
+}
+
+// countingRender records how many times a room asked for a frame. The RenderFunc
+// injection point exists so lobby need not import the templates; it also makes
+// "did this tick cost a render" directly observable, which is the only way to
+// assert the idle-room fix.
+func countingRender(n *int) RenderFunc {
+	return func(s Snapshot) Frames {
+		*n++
+		return testRender(s)
+	}
+}
+
+// The fix that matters most for going public: a room nobody is watching must
+// not render. Before this, an abandoned room produced two full HTML fragments
+// 2.5 times a second for its entire ten-minute life, which is what made room
+// flooding cheap.
+func TestATickRendersNothingWhenNobodyIsWatching(t *testing.T) {
+	renders := 0
+	opts := testOptions()
+	opts.Render = countingRender(&renders)
+	r := newRoom("QUIET", opts, nil)
+
+	startCmd{}.apply(r)
+	renders = 0 // Start legitimately broadcasts; count only the ticks.
+
+	for range 20 {
+		r.step()
+	}
+
+	if renders != 0 {
+		t.Errorf("an unwatched room rendered %d times over 20 ticks, want 0", renders)
+	}
+}
+
+func TestATickRendersOnceWhenSomebodyIsWatching(t *testing.T) {
+	renders := 0
+	opts := testOptions()
+	opts.Render = countingRender(&renders)
+	r := newRoom("WATCHED", opts, nil)
+
+	sub := &subscriber{ch: make(chan []byte, 64)}
+	subscribeCmd{kind: ScreenStream, sub: sub, reply: make(chan subscribeResult, 1)}.apply(r)
+	startCmd{}.apply(r)
+	renders = 0
+
+	for range 10 {
+		r.step()
+	}
+
+	// One render per tick regardless of how many subscribers there are -- that
+	// is the render-once-broadcast-many property.
+	if renders != 10 {
+		t.Errorf("renders = %d over 10 ticks, want 10", renders)
+	}
+}
+
+// A lobby has no tick to carry the tally, so a vote has to push it itself.
+// People fiddle with the buttons while waiting for the host.
+func TestAVoteBetweenRoundsUpdatesTheScreen(t *testing.T) {
+	renders := 0
+	opts := testOptions()
+	opts.Render = countingRender(&renders)
+	r := newRoom("LOBBY", opts, nil)
+
+	sub := &subscriber{ch: make(chan []byte, 64)}
+	subscribeCmd{kind: ScreenStream, sub: sub, reply: make(chan subscribeResult, 1)}.apply(r)
+	joinCmd{id: "ana", name: "ana", reply: make(chan joinResult, 1)}.apply(r)
+	renders = 0
+
+	voteCmd{id: "ana", dir: game.DirUp, reply: make(chan bool, 1)}.apply(r)
+
+	if renders != 1 {
+		t.Errorf("renders = %d after a lobby vote, want 1", renders)
+	}
+}
+
+// Mid-round the tick is already pushing frames, so a vote must not add another.
+func TestAVoteDuringPlayDoesNotBroadcast(t *testing.T) {
+	renders := 0
+	opts := testOptions()
+	opts.Render = countingRender(&renders)
+	r := newRoom("PLAYING", opts, nil)
+
+	sub := &subscriber{ch: make(chan []byte, 64)}
+	subscribeCmd{kind: ScreenStream, sub: sub, reply: make(chan subscribeResult, 1)}.apply(r)
+	joinCmd{id: "ana", name: "ana", reply: make(chan joinResult, 1)}.apply(r)
+	startCmd{}.apply(r)
+	for range 4 {
+		r.step() // clear the countdown into PhasePlaying
+	}
+	renders = 0
+
+	voteCmd{id: "ana", dir: game.DirUp, reply: make(chan bool, 1)}.apply(r)
+
+	if renders != 0 {
+		t.Errorf("renders = %d for a vote during play, want 0", renders)
+	}
+}
+
+func TestJoinRefusesPastThePlayerCap(t *testing.T) {
+	r := idleRoom(t)
+
+	for i := range maxPlayers {
+		reply := make(chan joinResult, 1)
+		joinCmd{id: PlayerID(fmt.Sprint(i)), name: "p", reply: reply}.apply(r)
+		if !(<-reply).seated {
+			t.Fatalf("player %d of %d was refused early", i+1, maxPlayers)
+		}
+	}
+
+	reply := make(chan joinResult, 1)
+	joinCmd{id: "one-too-many", name: "late", reply: reply}.apply(r)
+	if (<-reply).seated {
+		t.Error("a player past the cap was seated")
+	}
+	if len(r.players) != maxPlayers {
+		t.Errorf("players = %d, want %d", len(r.players), maxPlayers)
+	}
+}
+
+// A full room must not lock out somebody who is already in it -- reloading the
+// controller re-joins, and that must never cost a seat.
+func TestAFullRoomStillWelcomesItsOwnPlayersBack(t *testing.T) {
+	r := idleRoom(t)
+
+	for i := range maxPlayers {
+		joinCmd{id: PlayerID(fmt.Sprint(i)), name: "p", reply: make(chan joinResult, 1)}.apply(r)
+	}
+
+	reply := make(chan joinResult, 1)
+	joinCmd{id: PlayerID("0"), name: "p", reply: reply}.apply(r)
+
+	if !(<-reply).seated {
+		t.Error("an existing player was refused by a full room")
+	}
+}
+
+func TestSubscribeRefusesPastThePerRoomCap(t *testing.T) {
+	r := idleRoom(t)
+
+	for i := range maxSubscribers {
+		sub := &subscriber{ch: make(chan []byte, 4)}
+		reply := make(chan subscribeResult, 1)
+		subscribeCmd{kind: ScreenStream, sub: sub, reply: reply}.apply(r)
+		if !(<-reply).accepted {
+			t.Fatalf("subscriber %d of %d was refused early", i+1, maxSubscribers)
+		}
+	}
+
+	reply := make(chan subscribeResult, 1)
+	subscribeCmd{kind: ScreenStream, sub: &subscriber{ch: make(chan []byte, 4)}, reply: reply}.apply(r)
+	if (<-reply).accepted {
+		t.Error("a subscriber past the cap was accepted")
 	}
 }
