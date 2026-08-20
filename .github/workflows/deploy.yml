@@ -1,0 +1,75 @@
+name: Deploy
+
+# Deploys the edge Worker and its container with this repo's own scoped API
+# token, replacing Cloudflare's Workers Builds Git integration -- which
+# authenticates through a single account-level GitHub App shared by every repo
+# and cannot be split per app.
+#
+# Wired straight to push rather than staged behind workflow_dispatch, unlike the
+# Pages migrations. The reason is specific: if this job fails, Workers Builds is
+# still connected and still deploys, so a failure here is loud and harmless
+# rather than a site with no deploy path. Disabling Workers Builds in the
+# dashboard is the LAST step, once this has been seen to work.
+#
+# Until then both deploy on every push to main. That is two container image
+# builds of the same commit producing the same image -- wasteful, not dangerous.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  # Never cancel a deploy in flight. A cancelled one can leave the Worker
+  # updated and the container image not, which is the one state worth avoiding.
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy the edge Worker and container
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: edge
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Pinned to 24 explicitly, as edge-ci.yml does. There is no .node-version
+      # in this repo -- neither at the root nor in edge/ -- so node-version-file
+      # has nothing to read.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: edge/package-lock.json
+
+      - run: npm ci
+
+      # Fails on a malformed config, a bad binding or a Dockerfile path that
+      # does not resolve, without needing Docker or credentials -- the same
+      # check edge-ci.yml runs. Cheap, and it fails before anything is uploaded.
+      - name: Validate the wrangler config
+        run: npx wrangler deploy --dry-run --outdir /tmp/edge-build
+
+      # `deploy`, NOT `versions upload`. edge/README.md records why: preview
+      # builds default to versions upload, which uploads the Worker but does not
+      # update the container image -- so a preview silently runs the previous
+      # container. The same trap applies here.
+      #
+      # wrangler shells out to `docker build --load --provenance`, which needs
+      # Docker 23+/buildx 0.10+. ubuntu-latest has both; older installs fail
+      # with `unknown flag`.
+      - uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3.15.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: edge
+          command: deploy
