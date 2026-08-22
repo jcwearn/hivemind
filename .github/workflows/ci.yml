@@ -28,4 +28,4 @@ jobs:
       contents: read
     # Renovate pins this to a digest on its next run, leaving `# v1` behind as
     # the record of what to follow.
-    uses: jcwearn/workflows/.github/workflows/go-ci.yaml@8c9f2690f495be5546bbef78c555345e464cc593 # v1
+    uses: jcwearn/workflows/.github/workflows/go-ci.yaml@b5cf63b9fb73b7f54cfbe32778dbc686299d3761 # v1
