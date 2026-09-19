@@ -8,7 +8,7 @@
 # which is the difference between "the base image changed" being a commit and
 # being a mystery.
 
-FROM golang:1.27@sha256:f44f6e88636cfb311f9ebace870ded69d943f227bb3cb27d32ffd84ea18c43ea AS build
+FROM golang:1.27@sha256:03fd17ca31f26e3c8d5b83ae0606044133c59e0788784dd6f371da59cdb3b46f AS build
 
 WORKDIR /src
 
