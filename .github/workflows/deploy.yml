@@ -45,7 +45,7 @@ jobs:
       # Pinned to 24 explicitly, as edge-ci.yml does. There is no .node-version
       # in this repo -- neither at the root nor in edge/ -- so node-version-file
       # has nothing to read.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
           cache: npm
