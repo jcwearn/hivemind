@@ -2,6 +2,17 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["local>jcwearn/renovate-config"],
   "addLabels": ["release:patch"],
+  "packageRules": [
+    {
+      "description": "templ stamps its version into every generated file, so any templ bump fails the 'templ output is current' check unless the output is regenerated in the same PR. The command must also be allowed for this repo in the bot's global config (apps/renovate/data/renovate.json in jcwearn/k3s-cluster).",
+      "matchPackageNames": ["github.com/a-h/templ"],
+      "postUpgradeTasks": {
+        "commands": ["go tool templ generate"],
+        "fileFilters": ["**/*_templ.go"],
+        "executionMode": "branch"
+      }
+    }
+  ],
   "customManagers": [
     {
       "description": "golangci-lint is pinned in a bare version file, which no standard manager knows how to read. Without this the pin silently rots at whatever it was set to. See the go-ci.yaml section of the jcwearn/workflows README.",
