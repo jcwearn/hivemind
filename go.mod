@@ -1,6 +1,6 @@
 module github.com/jcwearn/hivemind
 
-go 1.25.7
+go 1.26.0
 
 require (
 	github.com/a-h/templ v0.3.1020
@@ -18,9 +18,9 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/natefinch/atomic v1.0.1 // indirect
 	golang.org/x/mod v0.40.0 // indirect
-	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/tools v0.49.0 // indirect
 )
 
