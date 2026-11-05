@@ -4,12 +4,12 @@
   "addLabels": ["release:patch"],
   "packageRules": [
     {
-      "description": "templ stamps its version into every generated file, so any templ bump fails the 'templ output is current' check unless the output is regenerated in the same PR. The command must also be allowed for this repo in the bot's global config (apps/renovate/data/renovate.json in jcwearn/k3s-cluster).",
+      "description": "templ stamps its version into every generated file, so any templ bump fails the 'templ output is current' check unless the output is regenerated in the same PR. The command must also be allowed for this repo in the bot's global config (apps/renovate/data/renovate.json in jcwearn/k3s-cluster). executionMode must stay 'update': the global config groups non-major updates, and 'branch' mode only sees the first upgrade's config, so the task is silently skipped when templ isn't first.",
       "matchPackageNames": ["github.com/a-h/templ"],
       "postUpgradeTasks": {
         "commands": ["go tool templ generate"],
         "fileFilters": ["**/*_templ.go"],
-        "executionMode": "branch"
+        "executionMode": "update"
       }
     }
   ],
