@@ -29,4 +29,4 @@ jobs:
     # Renovate keeps this digest current and the comment naming its exact
     # release. Never `# v1`: it goes stale at the next workflows release and
     # fails zizmor's ref-version-mismatch audit.
-    uses: jcwearn/workflows/.github/workflows/go-ci.yaml@176eacdd90dc808846cb58ab564ad4cedfdc1e0c # v1.8.13
+    uses: jcwearn/workflows/.github/workflows/go-ci.yaml@1eafd3170f8e2ea3dc23d443c3fcfb0aa502e8b3 # v1.8.14
