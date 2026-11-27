@@ -17,4 +17,4 @@ jobs:
     # shared workflow skips the registry login entirely and pushes nothing.
     permissions:
       contents: read
-    uses: jcwearn/workflows/.github/workflows/docker-build.yaml@1eafd3170f8e2ea3dc23d443c3fcfb0aa502e8b3 # v1.8.14
+    uses: jcwearn/workflows/.github/workflows/docker-build.yaml@a4078f8872df8f51a014632feadee3b7696860a1 # v1.9.0
