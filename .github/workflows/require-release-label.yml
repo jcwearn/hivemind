@@ -13,4 +13,4 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    uses: jcwearn/workflows/.github/workflows/require-release-label.yaml@1eafd3170f8e2ea3dc23d443c3fcfb0aa502e8b3 # v1.8.14
+    uses: jcwearn/workflows/.github/workflows/require-release-label.yaml@a4078f8872df8f51a014632feadee3b7696860a1 # v1.9.0
