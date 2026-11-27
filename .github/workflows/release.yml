@@ -16,6 +16,6 @@ jobs:
     permissions:
       contents: write # git tag + GitHub Release
       packages: write # push to GHCR
-    uses: jcwearn/workflows/.github/workflows/release.yaml@a4078f8872df8f51a014632feadee3b7696860a1 # v1.9.0
+    uses: jcwearn/workflows/.github/workflows/release.yaml@e1cc176411dffc046fdbdef9d3262333ea1b0e64 # v1.9.1
     with:
       image: ghcr.io/jcwearn/hivemind
